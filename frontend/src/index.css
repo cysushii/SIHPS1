@@ -2,17 +2,31 @@
 
 @layer base {
   :root {
-    --primary: #1a3a5c;
-    --primary-hover: #122942;
-    --accent: #0d9488;
-    --accent-hover: #0f766e;
+    --primary: #1b756b;
+    --primary-hover: #145952;
+    --hero-mint: #d7f9e4;
+    --hero-fade: #f0fdf5;
+    --accent-yellow: #f0b43a;
+    --accent-purple: #8177f1;
+    --text-main: #272727;
   }
-  
+
   body {
     background-color: #f8fafc;
-    color: #1e293b;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: var(--text-main);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Plus Jakarta Sans", "Poppins", sans-serif;
     margin: 0;
     padding: 0;
   }
+}
+
+/* Accessibility Font Size Variations */
+html.font-size-sm {
+  font-size: 14px;
+}
+html.font-size-md {
+  font-size: 16px;
+}
+html.font-size-lg {
+  font-size: 18px;
 }

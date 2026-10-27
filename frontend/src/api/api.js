@@ -4,22 +4,27 @@ export function getAuthToken() {
   return localStorage.getItem('token');
 }
 
-export function setAuthSession(token, role, instituteId = null, username = '') {
+export function setAuthSession(token, role, instituteId = null, email = '', fullName = '', instituteName = '') {
   localStorage.setItem('token', token);
   localStorage.setItem('role', role);
+  localStorage.setItem('email', email);
+  localStorage.setItem('full_name', fullName);
   if (instituteId !== null) {
     localStorage.setItem('institute_id', String(instituteId));
+    localStorage.setItem('institute_name', instituteName || '');
   } else {
     localStorage.removeItem('institute_id');
+    localStorage.removeItem('institute_name');
   }
-  localStorage.setItem('username', username);
 }
 
 export function clearAuthSession() {
   localStorage.removeItem('token');
   localStorage.removeItem('role');
   localStorage.removeItem('institute_id');
-  localStorage.removeItem('username');
+  localStorage.removeItem('institute_name');
+  localStorage.removeItem('email');
+  localStorage.removeItem('full_name');
 }
 
 export function getCurrentUser() {
@@ -29,21 +34,20 @@ export function getCurrentUser() {
     token,
     role: localStorage.getItem('role') || '',
     institute_id: localStorage.getItem('institute_id') ? parseInt(localStorage.getItem('institute_id'), 10) : null,
-    username: localStorage.getItem('username') || '',
+    institute_name: localStorage.getItem('institute_name') || '',
+    email: localStorage.getItem('email') || '',
+    full_name: localStorage.getItem('full_name') || '',
   };
 }
 
 export async function apiRequest(endpoint, options = {}) {
   const token = getAuthToken();
-  const headers = {
-    ...options.headers,
-  };
+  const headers = { ...options.headers };
 
   if (token && !headers['Authorization']) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  // If body is not FormData and not explicitly Content-Type set, format JSON
   let body = options.body;
   if (body && !(body instanceof FormData) && typeof body === 'object') {
     headers['Content-Type'] = 'application/json';
@@ -53,11 +57,7 @@ export async function apiRequest(endpoint, options = {}) {
   const url = `${API_BASE}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
 
   try {
-    const response = await fetch(url, {
-      ...options,
-      headers,
-      body,
-    });
+    const response = await fetch(url, { ...options, headers, body });
 
     if (response.status === 401) {
       clearAuthSession();
@@ -68,15 +68,13 @@ export async function apiRequest(endpoint, options = {}) {
     }
 
     if (response.status === 403) {
-      throw new Error('Access forbidden: Insufficient permissions for this action');
+      const errJson = await response.json().catch(() => ({}));
+      throw new Error(errJson.detail || 'Access forbidden: Insufficient permissions for this action');
     }
 
-    // Check if binary download (e.g. PDF)
     const contentType = response.headers.get('content-type') || '';
     if (contentType.includes('application/pdf') || options.responseType === 'blob') {
-      if (!response.ok) {
-        throw new Error(`Request failed with status ${response.status}`);
-      }
+      if (!response.ok) throw new Error(`Request failed with status ${response.status}`);
       return await response.blob();
     }
 
@@ -97,14 +95,13 @@ export async function apiRequest(endpoint, options = {}) {
   }
 }
 
-// ── Auth APIs ──────────────────────────────────────────────
 export const authApi = {
-  login: async (username, role, institute_id = null) => {
-    const data = await apiRequest('/auth/token', {
+  login: async (email, password) => {
+    const data = await apiRequest('/auth/login', {
       method: 'POST',
-      body: { username, role, institute_id },
+      body: { email, password },
     });
-    setAuthSession(data.access_token, data.role, institute_id, username);
+    setAuthSession(data.access_token, data.role, data.institute_id, data.email, data.full_name, data.institute_name);
     return data;
   },
   logout: () => {
@@ -113,50 +110,51 @@ export const authApi = {
   getInstitutesList: () => apiRequest('/institutes/list'),
 };
 
-// ── Institute APIs ─────────────────────────────────────────
 export const instituteApi = {
   uploadStudents: (formData) => apiRequest('/student/upload', { method: 'POST', body: formData }),
-  getCapacity: (instituteId, program = 'ALL') => apiRequest(`/dashboard/capacity/${instituteId}?program=${encodeURIComponent(program)}`),
-  createBatch: (name, institute_id) => apiRequest('/batches', { method: 'POST', body: { name, institute_id } }),
+  createBatch: (name) => apiRequest('/batches', { method: 'POST', body: { name } }),
   getBatches: () => apiRequest('/batches'),
   getBatchDetails: (batchId) => apiRequest(`/batches/${batchId}`),
-  addStudentsToBatch: (batchId, studentIds) => apiRequest(`/batches/${batchId}/students`, { method: 'POST', body: { student_ids: studentIds } }),
   pushBatch: (batchId) => apiRequest(`/batches/${batchId}/push`, { method: 'POST' }),
-  generateTokens: (batchId) => apiRequest(`/batches/${batchId}/verification/generate`, { method: 'POST' }),
-  sendVerificationEmails: (batchId) => apiRequest(`/batches/${batchId}/verification/send-emails`, { method: 'POST' }),
-  getVerificationStatus: (batchId) => apiRequest(`/batches/${batchId}/verification/status`),
-  markUnresponsive: (batchId) => apiRequest(`/batches/${batchId}/verification/mark-unresponsive`, { method: 'POST' }),
-  resendToken: (batchId, studentId) => apiRequest(`/batches/${batchId}/verification/${studentId}/resend`, { method: 'POST' }),
+  sendVerifications: (batchId) => apiRequest(`/batches/${batchId}/send-verifications`, { method: 'POST' }),
+  reviewCorrection: (batchId, studentId, action, note) =>
+    apiRequest(`/batches/${batchId}/students/${studentId}/review-correction`, {
+      method: 'POST',
+      body: { action, note },
+    }),
   downloadReport: (batchId) => apiRequest(`/batches/${batchId}/report`, { method: 'GET', responseType: 'blob' }),
-  notifyStudents: (batchId) => apiRequest(`/batches/${batchId}/notify`, { method: 'POST' }),
+  notifyStudents: (batchId) => apiRequest(`/batches/${batchId}/notify-approved-students`, { method: 'POST' }),
+  getEmailStatus: () => apiRequest('/email/status'),
+  sendTestEmail: (email) => apiRequest('/email/test', { method: 'POST', body: { email } }),
 };
 
-// ── AICTE APIs ─────────────────────────────────────────────
 export const aicteApi = {
-  getTrustScores: () => apiRequest('/dashboard/trust-scores'),
-  recomputeTrustScore: (instituteId) => apiRequest(`/dashboard/trust-scores/${instituteId}/recompute`, { method: 'POST' }),
-  getFlaggedRecords: (status = 'open') => apiRequest(`/dashboard/flagged?status=${status}`),
-  reviewFlag: (flagId, notes = '') => apiRequest(`/dashboard/flagged/${flagId}/review`, { method: 'POST', body: { status: 'reviewed', notes } }),
-  getDuplicates: () => apiRequest('/dashboard/duplicates'),
   getBatches: () => apiRequest('/batches'),
   getBatchDetails: (batchId) => apiRequest(`/batches/${batchId}`),
+  getLastRun: (batchId) => apiRequest(`/aicte/batches/${batchId}/last-run`),
+  submitReviewerDecision: (resultId, decision, note) =>
+    apiRequest(`/aicte/verification-results/${resultId}/decision`, {
+      method: 'POST',
+      body: { decision, note },
+    }),
   approveBatch: (batchId) => apiRequest(`/aicte/batches/${batchId}/approve`, { method: 'POST' }),
   rejectBatch: (batchId, reason) => apiRequest(`/aicte/batches/${batchId}/reject`, { method: 'POST', body: { reason } }),
+  onboardInstitute: (institute_id, admin_email, admin_name, admin_password) =>
+    apiRequest('/aicte/onboard-institute', {
+      method: 'POST',
+      body: { institute_id, admin_email, admin_name, admin_password },
+    }),
+  getInstitutesList: () => apiRequest('/institutes/list'),
   verifyChain: () => apiRequest('/audit/verify-chain'),
-  createCheckpoint: () => apiRequest('/security/checkpoint', { method: 'POST' }),
-  verifyAnchored: () => apiRequest('/security/verify-anchored'),
-  getHoneytokensStatus: () => apiRequest('/security/honeytokens/status'),
-  getEmailLogs: (batchId = null) => apiRequest(batchId ? `/emails/log?batch_id=${batchId}` : '/emails/log'),
-  getEmailConfig: () => apiRequest('/emails/config'),
+  getEmailStatus: () => apiRequest('/email/status'),
+  sendTestEmail: (email) => apiRequest('/email/test', { method: 'POST', body: { email } }),
 };
 
-// ── Public Verification APIs ───────────────────────────────
 export const publicApi = {
+  getVerificationPayload: (token) => apiRequest(`/verify/token/${token}`),
+  confirmVerification: (token) => apiRequest(`/verify/token/${token}/confirm`, { method: 'POST' }),
+  submitCorrection: (token, corrections) => apiRequest(`/verify/token/${token}/correct`, { method: 'POST', body: { corrections } }),
   getPublicKey: () => apiRequest('/verify/public-key'),
   verifyDocument: (document, signature) => apiRequest('/verify/document', { method: 'POST', body: { document, signature } }),
   getDocumentByApaar: (apaarId) => apiRequest(`/verify/document/${apaarId}`),
-  getTokenDetails: (token) => apiRequest(`/verify/token/${token}`),
-  confirmToken: (token) => apiRequest(`/verify/token/${token}/confirm`, { method: 'POST' }),
-  correctToken: (token, corrections) => apiRequest(`/verify/token/${token}/correct`, { method: 'POST', body: { corrections } }),
 };
-

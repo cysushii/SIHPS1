@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { Header, Footer, StatusChip } from '../../components/Layout';
+import { Header, Footer, StatusChip, EmailServiceChip } from '../../components/Layout';
 import { useAuth } from '../../context/AuthContext';
 import { instituteApi } from '../../api/api';
+import { formatTitleCase, getStatusLabel } from '../../utils/formatters';
 import {
   Upload,
   PlusCircle,
@@ -13,10 +13,10 @@ import {
   FileSpreadsheet,
   Layers,
   ChevronRight,
-  ExternalLink,
   RefreshCw,
   Mail,
-  CheckCircle,
+  CheckCircle2,
+  Inbox
 } from 'lucide-react';
 
 export function InstitutePortal() {
@@ -28,13 +28,21 @@ export function InstitutePortal() {
   const [selectedBatch, setSelectedBatch] = useState(null);
   const [batchDetails, setBatchDetails] = useState(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
-  const [capacityData, setCapacityData] = useState(null);
+  const [emailStatus, setEmailStatus] = useState(null);
 
   // Ingestion form state
   const [uploadFile, setUploadFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState(null);
   const [actionMessage, setActionMessage] = useState(null);
+
+  // Diagnostic Test Email
+  const [testEmailAddr, setTestEmailAddr] = useState('');
+  const [sendingTest, setSendingTest] = useState(false);
+
+  // Correction Review Modal
+  const [correctionTarget, setCorrectionTarget] = useState(null);
+  const [reviewNote, setReviewNote] = useState('');
 
   const fetchBatches = async () => {
     try {
@@ -48,11 +56,10 @@ export function InstitutePortal() {
     }
   };
 
-  const fetchCapacity = async () => {
-    if (!user?.institute_id) return;
+  const fetchEmailStatus = async () => {
     try {
-      const cap = await instituteApi.getCapacity(user.institute_id);
-      setCapacityData(cap);
+      const res = await instituteApi.getEmailStatus();
+      setEmailStatus(res);
     } catch (err) {
       console.error(err);
     }
@@ -60,24 +67,8 @@ export function InstitutePortal() {
 
   useEffect(() => {
     fetchBatches();
-    fetchCapacity();
+    fetchEmailStatus();
   }, [user]);
-
-  const handleCreateBatch = async (e) => {
-    e.preventDefault();
-    if (!newBatchName.trim()) return;
-    setCreatingBatch(true);
-    try {
-      await instituteApi.createBatch(newBatchName, user.institute_id);
-      setNewBatchName('');
-      setActionMessage({ type: 'success', text: 'Batch created successfully!' });
-      fetchBatches();
-    } catch (err) {
-      setActionMessage({ type: 'error', text: err.message });
-    } finally {
-      setCreatingBatch(false);
-    }
-  };
 
   const handleSelectBatch = async (batchId) => {
     setSelectedBatch(batchId);
@@ -92,6 +83,23 @@ export function InstitutePortal() {
     }
   };
 
+  const handleCreateBatch = async (e) => {
+    e.preventDefault();
+    if (!newBatchName.trim()) return;
+    setCreatingBatch(true);
+    try {
+      const res = await instituteApi.createBatch(newBatchName);
+      setNewBatchName('');
+      setActionMessage({ type: 'success', text: `Batch '${res.name}' created with ${res.student_count} attached student(s).` });
+      fetchBatches();
+      handleSelectBatch(res.batch_id);
+    } catch (err) {
+      setActionMessage({ type: 'error', text: err.message });
+    } finally {
+      setCreatingBatch(false);
+    }
+  };
+
   const handleFileUpload = async (e) => {
     e.preventDefault();
     if (!uploadFile) return;
@@ -100,18 +108,13 @@ export function InstitutePortal() {
 
     const formData = new FormData();
     formData.append('file', uploadFile);
-    if (user?.institute_id) {
-      formData.append('institute_id', user.institute_id);
-    }
 
     try {
       const res = await instituteApi.uploadStudents(formData);
       setUploadResult(res);
-      setActionMessage({ type: 'success', text: `Ingested ${res.inserted || 0} students with full verification.` });
-      // If a batch is selected and in draft, prompt or add them
-      if (selectedBatch) {
-        handleSelectBatch(selectedBatch);
-      }
+      setActionMessage({ type: 'success', text: `Roster processed: ${res.inserted} students registered.` });
+      fetchBatches();
+      if (selectedBatch) handleSelectBatch(selectedBatch);
     } catch (err) {
       setActionMessage({ type: 'error', text: err.message });
     } finally {
@@ -119,11 +122,24 @@ export function InstitutePortal() {
     }
   };
 
+  const handleSendVerifications = async (batchId) => {
+    try {
+      const res = await instituteApi.sendVerifications(batchId);
+      setActionMessage({
+        type: 'success',
+        text: `Verification dispatch complete: ${res.sent_count} sent successfully (${res.provider}${res.test_mode ? ` - Routed to ${res.test_redirect}` : ''}).`
+      });
+      handleSelectBatch(batchId);
+    } catch (err) {
+      setActionMessage({ type: 'error', text: err.message });
+    }
+  };
+
   const handlePushBatch = async (batchId) => {
     if (!confirm('Are you sure you want to push this batch to AICTE for official regulatory review?')) return;
     try {
       await instituteApi.pushBatch(batchId);
-      setActionMessage({ type: 'success', text: 'Batch pushed to AICTE successfully!' });
+      setActionMessage({ type: 'success', text: 'Batch pushed to AICTE regulatory desk.' });
       fetchBatches();
       if (selectedBatch === batchId) handleSelectBatch(batchId);
     } catch (err) {
@@ -131,37 +147,32 @@ export function InstitutePortal() {
     }
   };
 
-  const handleGenerateTokens = async (batchId) => {
+  const handleSendTestEmail = async (e) => {
+    e.preventDefault();
+    if (!testEmailAddr.trim()) return;
+    setSendingTest(true);
     try {
-      const res = await instituteApi.generateTokens(batchId);
-      setActionMessage({ type: 'success', text: `Generated ${res.generated_count} self-verification links.` });
-      handleSelectBatch(batchId);
+      const res = await instituteApi.sendTestEmail(testEmailAddr.trim());
+      setActionMessage({
+        type: res.delivered ? 'success' : 'error',
+        text: `Diagnostic test response: ${res.provider_response}`
+      });
+      fetchEmailStatus();
     } catch (err) {
       setActionMessage({ type: 'error', text: err.message });
+    } finally {
+      setSendingTest(false);
     }
   };
 
-  const handleSendEmails = async (batchId) => {
+  const handleReviewCorrection = async (action) => {
+    if (!correctionTarget) return;
     try {
-      const res = await instituteApi.sendVerificationEmails(batchId);
-      setActionMessage({
-        type: 'success',
-        text: `Verification emails dispatched: ${res.sent} sent, ${res.skipped} skipped (dry-run/mock).`,
-      });
-      handleSelectBatch(batchId);
-    } catch (err) {
-      setActionMessage({ type: 'error', text: err.message });
-    }
-  };
-
-  const handleMarkUnresponsive = async (batchId) => {
-    try {
-      const res = await instituteApi.markUnresponsive(batchId);
-      setActionMessage({
-        type: 'info',
-        text: `Demo Action: Marked ${res.marked_unresponsive} pending tokens as unresponsive.`,
-      });
-      handleSelectBatch(batchId);
+      await instituteApi.reviewCorrection(selectedBatch, correctionTarget.student_id, action, reviewNote);
+      setActionMessage({ type: 'success', text: `Correction proposal ${action}ed.` });
+      setCorrectionTarget(null);
+      setReviewNote('');
+      handleSelectBatch(selectedBatch);
     } catch (err) {
       setActionMessage({ type: 'error', text: err.message });
     }
@@ -173,7 +184,7 @@ export function InstitutePortal() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `AICTE_Approval_Batch_${batchId}.pdf`;
+      a.download = `AICTE_EoA_Batch_${batchId}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -182,96 +193,73 @@ export function InstitutePortal() {
     }
   };
 
-  const handleNotifyStudents = async (batchId) => {
+  const handleNotifyApproved = async (batchId) => {
     try {
       const res = await instituteApi.notifyStudents(batchId);
       setActionMessage({
         type: 'success',
-        text: `Completion emails dispatched to approved students: ${res.sent} sent, ${res.skipped} mocked.`,
+        text: `Completion notice dispatched to ${res.sent_count} approved student(s).`
       });
     } catch (err) {
       setActionMessage({ type: 'error', text: err.message });
     }
   };
 
+  const instituteDisplayName = user?.institute_name ? formatTitleCase(user.institute_name) : 'Institute Administrator';
+
   return (
     <div className="min-h-screen flex flex-col justify-between bg-slate-50">
       <Header />
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Institute Info Header */}
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* Pale Mint Hero Section */}
+      <section className="bg-gradient-to-b from-[#d7f9e4] to-[#f0fdf5] border-b border-teal-100 py-7 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <span className="inline-block px-2 py-0.5 rounded bg-teal-100 text-teal-800 text-xs font-semibold uppercase tracking-wider mb-2">
-              Institute Operations Portal
-            </span>
-            <h1 className="text-2xl font-bold text-[#1a3a5c]">
-              Institution #{user?.institute_id || '—'} Dashboard
+            <h1 className="text-2xl font-bold text-[#272727] tracking-tight">
+              {instituteDisplayName}
             </h1>
-            <p className="text-xs text-slate-500 mt-1">
-              Manage student datasets, verify APAAR IDs, create submission batches, and interact with AICTE.
+            <p className="text-xs text-slate-600 mt-1">
+              Student enrollment roster management, single-use self-verification, and AICTE approval tracking
             </p>
           </div>
 
-          {/* Real-World Capacity Status Card */}
-          {capacityData && (
-            <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 min-w-[260px]">
-              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide block mb-1">
-                AICTE Intake Approval
-              </span>
-              {capacityData.status === 'no_course_data_available' ? (
-                <div>
-                  <span className="text-xs font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 inline-block mb-1">
-                    Multi-Year Extended EOA
-                  </span>
-                  <p className="text-[11px] text-slate-500">Autonomous / Deemed status (no course rows required)</p>
-                </div>
-              ) : (
-                <div>
-                  <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 inline-block mb-1">
-                    Standard Course Intake Active
-                  </span>
-                  <p className="text-[11px] text-slate-500">
-                    {capacityData.programs?.length || 0} approved programme streams verified
-                  </p>
-                </div>
-              )}
+          <div className="flex flex-wrap items-center gap-2">
+            <EmailServiceChip statusData={emailStatus} />
+            <div className="bg-white px-3 py-1 rounded-full border border-purple-200 text-[#8177f1] text-xs font-semibold shadow-sm">
+              {batches.length} Batch{batches.length === 1 ? '' : 'es'} Registered
             </div>
-          )}
+          </div>
         </div>
+      </section>
 
-        {/* Global Action Banner */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Action Message Banner */}
         {actionMessage && (
           <div
-            className={`mb-6 p-4 rounded-lg text-xs font-medium border flex items-center justify-between ${
+            className={`mb-6 p-4 rounded-xl text-xs font-medium border flex items-center justify-between ${
               actionMessage.type === 'error'
                 ? 'bg-rose-50 text-rose-800 border-rose-200'
-                : actionMessage.type === 'info'
-                ? 'bg-purple-50 text-purple-800 border-purple-200'
                 : 'bg-emerald-50 text-emerald-800 border-emerald-200'
             }`}
           >
             <span>{actionMessage.text}</span>
-            <button
-              onClick={() => setActionMessage(null)}
-              className="text-slate-400 hover:text-slate-600 font-bold ml-4"
-            >
+            <button onClick={() => setActionMessage(null)} className="text-slate-400 hover:text-slate-600 font-bold ml-4">
               ×
             </button>
           </div>
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column: Upload + Batch Management */}
+          {/* Left Column: Upload Roster + Create Batch */}
           <div className="space-y-6">
-            {/* Student Upload Box */}
-            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-              <div className="flex items-center space-x-2 mb-3">
-                <Upload className="h-5 w-5 text-[#0d9488]" />
-                <h2 className="text-base font-bold text-[#1a3a5c]">Upload Student Roster</h2>
+            {/* Upload Box */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+              <div className="flex items-center space-x-2 mb-2">
+                <Upload className="h-5 w-5 text-[#1b756b]" />
+                <h2 className="text-sm font-bold text-[#272727]">Upload Student Roster</h2>
               </div>
               <p className="text-xs text-slate-500 mb-4">
-                Upload CSV or Excel containing student APAAR IDs, names, and program info.
+                Upload CSV roster with mandatory columns: apaar_id, name, program, enrollment_year, and email.
               </p>
 
               <form onSubmit={handleFileUpload} className="space-y-3">
@@ -280,13 +268,12 @@ export function InstitutePortal() {
                   accept=".csv,.xlsx,.xls"
                   required
                   onChange={(e) => setUploadFile(e.target.files[0])}
-                  className="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-teal-50 file:text-[#0d9488] hover:file:bg-teal-100 cursor-pointer"
+                  className="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-[#d7f9e4] file:text-[#1b756b] hover:file:bg-teal-200 cursor-pointer"
                 />
-
                 <button
                   type="submit"
                   disabled={uploading || !uploadFile}
-                  className="w-full bg-[#0d9488] hover:bg-[#0f766e] text-white py-2 px-3 rounded-lg text-xs font-semibold shadow transition disabled:opacity-50 flex items-center justify-center space-x-1.5"
+                  className="w-full bg-[#1b756b] hover:bg-[#145952] text-white py-2 px-3 rounded-lg text-xs font-semibold shadow-sm transition disabled:opacity-50 flex items-center justify-center space-x-1.5"
                 >
                   <FileSpreadsheet className="h-4 w-4" />
                   <span>{uploading ? 'Processing Data...' : 'Ingest & Validate Roster'}</span>
@@ -294,68 +281,59 @@ export function InstitutePortal() {
               </form>
 
               {uploadResult && (
-                <div className="mt-4 p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs space-y-1">
-                  <div className="font-semibold text-slate-700">Ingestion Results:</div>
-                  <div className="text-emerald-700">✓ Inserted: {uploadResult.inserted}</div>
+                <div className="mt-3 p-3 bg-slate-50 rounded-lg text-xs space-y-1">
+                  <div className="font-semibold text-slate-700">Roster Ingest Result:</div>
+                  <div className="text-emerald-700 font-medium">✓ {uploadResult.inserted} students registered</div>
                   {uploadResult.rejected > 0 && (
-                    <div className="text-rose-600 font-medium">✕ Rejected: {uploadResult.rejected}</div>
-                  )}
-                  {uploadResult.flags_created > 0 && (
-                    <div className="text-amber-700">⚠ Anomaly Flags Raised: {uploadResult.flags_created}</div>
+                    <div className="text-rose-600 font-medium">✕ {uploadResult.rejected} rows rejected</div>
                   )}
                 </div>
               )}
             </div>
 
-            {/* Create New Batch */}
-            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-              <div className="flex items-center space-x-2 mb-3">
-                <PlusCircle className="h-5 w-5 text-[#1a3a5c]" />
-                <h2 className="text-base font-bold text-[#1a3a5c]">Create Submission Batch</h2>
+            {/* Create Batch Box */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+              <div className="flex items-center space-x-2 mb-2">
+                <PlusCircle className="h-5 w-5 text-[#1b756b]" />
+                <h2 className="text-sm font-bold text-[#272727]">Create Submission Batch</h2>
               </div>
-
               <form onSubmit={handleCreateBatch} className="space-y-3">
-                <div>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. 2024-25 CSE & ECE Regular Batch"
-                    value={newBatchName}
-                    onChange={(e) => setNewBatchName(e.target.value)}
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#0d9488] outline-none"
-                  />
-                </div>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. 2026 Academic Submission Cohort"
+                  value={newBatchName}
+                  onChange={(e) => setNewBatchName(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#1b756b] outline-none"
+                />
                 <button
                   type="submit"
                   disabled={creatingBatch || !newBatchName.trim()}
-                  className="w-full bg-[#1a3a5c] hover:bg-[#122942] text-white py-2 px-3 rounded-lg text-xs font-semibold shadow transition disabled:opacity-50"
+                  className="w-full bg-[#272727] hover:bg-black text-white py-2 px-3 rounded-lg text-xs font-semibold shadow-sm transition disabled:opacity-50"
                 >
-                  {creatingBatch ? 'Creating Batch...' : 'Initialize New Batch'}
+                  {creatingBatch ? 'Initializing...' : 'Initialize New Batch'}
                 </button>
               </form>
             </div>
 
             {/* Batches List */}
-            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center space-x-2">
-                  <Layers className="h-5 w-5 text-[#1a3a5c]" />
-                  <h2 className="text-base font-bold text-[#1a3a5c]">Your Batches</h2>
+                  <Layers className="h-5 w-5 text-[#1b756b]" />
+                  <h2 className="text-sm font-bold text-[#272727]">Registered Batches</h2>
                 </div>
-                <button
-                  onClick={fetchBatches}
-                  className="text-slate-400 hover:text-slate-600 p-1 rounded"
-                  title="Refresh"
-                >
-                  <RefreshCw className="h-4 w-4" />
+                <button onClick={fetchBatches} className="text-slate-400 hover:text-slate-600 p-1" title="Refresh">
+                  <RefreshCw className="h-3.5 w-3.5" />
                 </button>
               </div>
 
               {loading ? (
                 <div className="text-center py-6 text-xs text-slate-400">Loading batches...</div>
               ) : batches.length === 0 ? (
-                <div className="text-center py-6 text-xs text-slate-400">
-                  No batches created yet. Create your first batch above.
+                <div className="text-center py-8 text-xs text-slate-400 bg-slate-50 rounded-xl p-4 border border-dashed border-slate-200">
+                  <Inbox className="h-6 w-6 text-slate-300 mx-auto mb-1" />
+                  <span>No batches yet. Upload a student roster to begin.</span>
                 </div>
               ) : (
                 <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
@@ -363,18 +341,16 @@ export function InstitutePortal() {
                     <div
                       key={b.batch_id}
                       onClick={() => handleSelectBatch(b.batch_id)}
-                      className={`p-3 rounded-lg cursor-pointer transition flex items-center justify-between text-xs ${
-                        selectedBatch === b.batch_id
-                          ? 'bg-teal-50 border border-teal-200'
-                          : 'hover:bg-slate-50'
+                      className={`p-3 rounded-xl cursor-pointer transition flex items-center justify-between text-xs ${
+                        selectedBatch === b.batch_id ? 'bg-[#d7f9e4]/40 border border-teal-200' : 'hover:bg-slate-50'
                       }`}
                     >
                       <div className="space-y-1">
-                        <div className="font-semibold text-slate-800">{b.name}</div>
+                        <div className="font-semibold text-[#272727]">{b.name}</div>
                         <div className="text-slate-400 flex items-center space-x-2">
-                          <span>{b.student_count} students</span>
+                          <span>{b.student_count} student(s)</span>
                           <span>•</span>
-                          <StatusChip status={b.status} />
+                          <StatusChip status={b.status} label={b.status_label} />
                         </div>
                       </div>
                       <ChevronRight className="h-4 w-4 text-slate-400" />
@@ -383,45 +359,64 @@ export function InstitutePortal() {
                 </div>
               )}
             </div>
+
+            {/* Diagnostic Email Testing Box */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm text-xs space-y-3">
+              <span className="font-bold text-[#272727] block">Send Diagnostic Test Email</span>
+              <p className="text-[11px] text-slate-500">
+                Directly verify live delivery connectivity to any target address.
+              </p>
+              <form onSubmit={handleSendTestEmail} className="space-y-2">
+                <input
+                  type="email"
+                  required
+                  placeholder="recipient@example.com"
+                  value={testEmailAddr}
+                  onChange={(e) => setTestEmailAddr(e.target.value)}
+                  className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg outline-none focus:ring-1 focus:ring-[#1b756b]"
+                />
+                <button
+                  type="submit"
+                  disabled={sendingTest || !testEmailAddr.trim()}
+                  className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 py-1.5 rounded-lg font-medium text-xs disabled:opacity-50"
+                >
+                  {sendingTest ? 'Sending...' : 'Send Test Message'}
+                </button>
+              </form>
+            </div>
           </div>
 
-          {/* Right 2 Columns: Batch Detail & Lifecycle Actions */}
+          {/* Right 2 Columns: Batch Workspace */}
           <div className="lg:col-span-2 space-y-6">
             {selectedBatch && batchDetails ? (
-              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-6">
-                {/* Batch Overview Header */}
+              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 gap-4">
                   <div>
                     <div className="flex items-center space-x-3 mb-1">
-                      <h2 className="text-xl font-bold text-[#1a3a5c]">{batchDetails.name}</h2>
-                      <StatusChip status={batchDetails.status} />
+                      <h2 className="text-xl font-bold text-[#272727]">{batchDetails.name}</h2>
+                      <StatusChip status={batchDetails.status} label={batchDetails.status_label} />
                     </div>
                     <span className="text-xs text-slate-400">
-                      Batch ID: #{batchDetails.batch_id} • {batchDetails.student_count} Students Enrolled
+                      {batchDetails.student_count} Enrolled Student Record(s)
                     </span>
                   </div>
 
-                  {/* Batch Action Buttons */}
                   <div className="flex flex-wrap items-center gap-2">
                     {batchDetails.status === 'draft' && (
                       <>
-                        {batchDetails.student_count === 0 && (
-                          <span className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded">
-                            Upload roster on the left to attach students
-                          </span>
-                        )}
                         <button
-                          onClick={() => handleGenerateTokens(batchDetails.batch_id)}
-                          disabled={batchDetails.student_count === 0}
-                          className="bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow transition flex items-center space-x-1 disabled:opacity-40"
+                          onClick={() => handleSendVerifications(batchDetails.batch_id)}
+                          disabled={!emailStatus?.can_send || batchDetails.student_count === 0}
+                          className="bg-[#1b756b] hover:bg-[#145952] text-white px-3.5 py-1.5 rounded-lg text-xs font-semibold shadow-sm transition flex items-center space-x-1.5 disabled:opacity-40"
+                          title={!emailStatus?.can_send ? 'Email service not configured' : ''}
                         >
-                          <Users className="h-3.5 w-3.5" />
-                          <span>Generate Self-Verify Links</span>
+                          <Mail className="h-3.5 w-3.5" />
+                          <span>Dispatch Verification Emails</span>
                         </button>
                         <button
                           onClick={() => handlePushBatch(batchDetails.batch_id)}
                           disabled={batchDetails.student_count === 0}
-                          className="bg-[#1a3a5c] hover:bg-[#122942] text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow transition flex items-center space-x-1 disabled:opacity-40"
+                          className="bg-[#272727] hover:bg-black text-white px-3.5 py-1.5 rounded-lg text-xs font-semibold shadow-sm transition flex items-center space-x-1.5 disabled:opacity-40"
                         >
                           <Send className="h-3.5 w-3.5" />
                           <span>Push to AICTE</span>
@@ -433,100 +428,74 @@ export function InstitutePortal() {
                       <>
                         <button
                           onClick={() => handleDownloadPdf(batchDetails.batch_id)}
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow transition flex items-center space-x-1"
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-semibold shadow-sm transition flex items-center space-x-1.5"
                         >
                           <FileCheck2 className="h-3.5 w-3.5" />
-                          <span>Download Signed AICTE EOA PDF</span>
+                          <span>Download Signed EoA PDF</span>
                         </button>
                         <button
-                          onClick={() => handleNotifyStudents(batchDetails.batch_id)}
-                          className="bg-[#1a3a5c] hover:bg-[#122942] text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow transition flex items-center space-x-1"
+                          onClick={() => handleNotifyApproved(batchDetails.batch_id)}
+                          className="bg-[#1b756b] hover:bg-[#145952] text-white px-3.5 py-1.5 rounded-lg text-xs font-semibold shadow-sm transition flex items-center space-x-1.5"
                         >
                           <Mail className="h-3.5 w-3.5" />
-                          <span>Notify Students</span>
+                          <span>Notify Approved Students</span>
                         </button>
                       </>
                     )}
                   </div>
                 </div>
 
-                {/* Batch Rejection Reason if any */}
                 {batchDetails.reject_reason && (
-                  <div className="p-4 bg-rose-50 border border-rose-200 rounded-lg text-xs">
-                    <span className="font-bold text-rose-800 block mb-1">AICTE Regulatory Feedback (Rejected):</span>
-                    <p className="text-rose-700">{batchDetails.reject_reason}</p>
+                  <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900">
+                    <span className="font-bold block mb-1">Feedback from AICTE Regulatory Review:</span>
+                    <p>{batchDetails.reject_reason}</p>
                   </div>
                 )}
 
-                {/* Self-Verification Operations Toolbar */}
-                <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
-                  <div>
-                    <span className="font-semibold text-slate-700 block">Student Self-Verification Links</span>
-                    <span className="text-[11px] text-slate-500">
-                      In production, students receive this via email. For demo, test the link directly below.
-                    </span>
-                  </div>
-
-                  <div className="flex items-center space-x-2">
-                    <button
-                      onClick={() => handleSendEmails(batchDetails.batch_id)}
-                      className="px-2.5 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 rounded text-slate-700 font-medium transition"
-                    >
-                      Send / Mock Emails
-                    </button>
-                    <button
-                      onClick={() => handleMarkUnresponsive(batchDetails.batch_id)}
-                      className="px-2.5 py-1.5 bg-purple-50 border border-purple-200 hover:bg-purple-100 rounded text-purple-700 font-medium transition"
-                    >
-                      Simulate Unresponsive
-                    </button>
-                  </div>
-                </div>
-
-                {/* Students Table */}
+                {/* Students Roster Table */}
                 <div>
-                  <h3 className="text-sm font-bold text-slate-800 mb-3">Enrolled Student Records</h3>
-                  <div className="border border-slate-200 rounded-lg overflow-x-auto">
+                  <h3 className="text-sm font-bold text-[#272727] mb-3">Enrolled Student Records</h3>
+                  <div className="border border-slate-200 rounded-xl overflow-x-auto">
                     <table className="w-full text-left text-xs divide-y divide-slate-200">
-                      <thead className="bg-slate-50 text-slate-600 font-semibold uppercase tracking-wider text-[10px]">
+                      <thead className="bg-slate-50 text-slate-600 font-semibold uppercase text-[10px] tracking-wider">
                         <tr>
                           <th className="px-4 py-3">Student Name</th>
-                          <th className="px-4 py-3">APAAR ID</th>
+                          <th className="px-4 py-3">Masked APAAR</th>
                           <th className="px-4 py-3">Programme</th>
                           <th className="px-4 py-3">Year</th>
                           <th className="px-4 py-3">Verification</th>
-                          <th className="px-4 py-3">Self-Verify URL</th>
+                          <th className="px-4 py-3">Email Dispatch</th>
+                          <th className="px-4 py-3 text-right">Student Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 bg-white">
                         {batchDetails.students?.length === 0 ? (
                           <tr>
-                            <td colSpan={6} className="px-4 py-6 text-center text-slate-400">
-                              No students attached to this batch yet.
+                            <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
+                              No student records attached to this batch.
                             </td>
                           </tr>
                         ) : (
                           batchDetails.students?.map((s) => (
-                            <tr key={s.student_id} className="hover:bg-slate-50">
-                              <td className="px-4 py-3 font-medium text-slate-800">{s.name}</td>
-                              <td className="px-4 py-3 font-mono text-slate-600">{s.apaar_id}</td>
+                            <tr key={s.student_id} className="hover:bg-slate-50/50">
+                              <td className="px-4 py-3 font-medium text-[#272727]">{s.name}</td>
+                              <td className="px-4 py-3 font-mono text-slate-500">{s.apaar_id_masked}</td>
                               <td className="px-4 py-3 text-slate-600">{s.program}</td>
                               <td className="px-4 py-3 text-slate-500">{s.enrollment_year}</td>
                               <td className="px-4 py-3">
-                                <StatusChip status={s.verification_status} />
+                                <StatusChip status={s.verification_status} label={s.verification_status_label} />
                               </td>
                               <td className="px-4 py-3">
-                                {s.verify_token ? (
-                                  <Link
-                                    to={`/verify/${s.verify_token}`}
-                                    target="_blank"
-                                    className="text-teal-600 hover:text-teal-800 font-medium inline-flex items-center space-x-1"
+                                <StatusChip status={s.email_status} label={s.email_status_label} />
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                {s.verification_status === 'correction_requested' && s.corrections && (
+                                  <button
+                                    onClick={() => setCorrectionTarget(s)}
+                                    className="px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 font-semibold rounded text-[11px]"
                                   >
-                                    <span>Open Link</span>
-                                    <ExternalLink className="h-3 w-3" />
-                                  </Link>
-                                ) : (
-                                  <span className="text-slate-400 italic">Not generated</span>
+                                    Review Correction
+                                  </button>
                                 )}
                               </td>
                             </tr>
@@ -538,16 +507,73 @@ export function InstitutePortal() {
                 </div>
               </div>
             ) : (
-              <div className="bg-white p-12 rounded-xl border border-dashed border-slate-300 text-center space-y-3">
+              <div className="bg-white p-12 rounded-2xl border border-dashed border-slate-300 text-center space-y-3">
                 <Layers className="h-10 w-10 text-slate-300 mx-auto" />
-                <h3 className="text-base font-semibold text-slate-600">Select or Create a Batch</h3>
+                <h3 className="text-base font-semibold text-slate-600">Select or Initialize a Batch</h3>
                 <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                  Click on an existing batch from the list on the left to review students, dispatch verification links, or submit to AICTE.
+                  Select an academic submission cohort from the left panel to review student enrollment records, dispatch verification requests, or submit to AICTE.
                 </p>
               </div>
             )}
           </div>
         </div>
+
+        {/* Correction Review Modal */}
+        {correctionTarget && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+            <div className="bg-white max-w-md w-full rounded-2xl p-6 shadow-xl space-y-4">
+              <h3 className="text-base font-bold text-[#272727]">
+                Review Student Proposed Correction
+              </h3>
+              <p className="text-xs text-slate-500">
+                Student <strong>{correctionTarget.name}</strong> submitted these corrected values:
+              </p>
+
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs space-y-2">
+                {Object.entries(correctionTarget.corrections || {}).map(([key, val]) => (
+                  <div key={key} className="flex justify-between">
+                    <span className="text-slate-500 capitalize">{key.replace(/_/g, ' ')}:</span>
+                    <span className="font-semibold text-teal-800">{String(val)}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Institutional Note (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Verified against physical grade sheet"
+                  value={reviewNote}
+                  onChange={(e) => setReviewNote(e.target.value)}
+                  className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg outline-none"
+                />
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-2">
+                <button
+                  onClick={() => setCorrectionTarget(null)}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleReviewCorrection('reject')}
+                  className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-800 font-semibold rounded-lg text-xs"
+                >
+                  Reject Proposal
+                </button>
+                <button
+                  onClick={() => handleReviewCorrection('accept')}
+                  className="px-3 py-1.5 bg-[#1b756b] hover:bg-[#145952] text-white font-semibold rounded-lg text-xs"
+                >
+                  Accept & Update Record
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
 
       <Footer />

@@ -1,6 +1,0 @@
-apaar_id,name,program,enrollment_year,dob,address,issue_note
-111111111111,Invalid Digits Student,B.Tech Computer Science,2024,2002-01-01,"Mumbai","Format rejection: identical digits"
-240101000101,Rahul Sharma,B.Tech Mechanical,2024,2002-05-14,"Pune","Duplicate check: same APAAR at another institution"
-249999000001,Intruder Canary,B.Tech Computer Science,2024,2002-03-12,"Delhi","CRITICAL: Honeytoken Canary Hit (Reserved ID misused)"
-153301000001,Plausibility Anomaly,B.Tech Computer Science,2024,2002-05-14,"Chennai","Lifecycle implausibility: unreasonable gap"
-

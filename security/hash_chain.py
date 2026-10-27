@@ -69,6 +69,11 @@ def verify_chain(db: Session) -> tuple[bool, int | None]:
 
     expected_prev = GENESIS_HASH
     for log in logs:
+        # Genesis block handling:
+        if log.id == 1 and log.event_type == "GENESIS" and log.event_hash == GENESIS_HASH:
+            expected_prev = GENESIS_HASH
+            continue
+
         # Re-check that stored prev_hash matches what previous block produced
         if log.prev_hash != expected_prev:
             return False, log.id

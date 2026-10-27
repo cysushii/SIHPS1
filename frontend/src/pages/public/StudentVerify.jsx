@@ -1,18 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { publicApi } from '../../api/api';
-import { ShieldCheck, CheckCircle2, AlertCircle, Edit3, ArrowRight } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Edit3, ArrowRight } from 'lucide-react';
 
 export function StudentVerify() {
   const { token } = useParams();
+  const [searchParams] = useSearchParams();
+  const defaultAction = searchParams.get('action'); // 'confirm' or 'correct'
+
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [confirmed, setConfirmed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  // Correction Mode
-  const [showCorrectionForm, setShowCorrectionForm] = useState(false);
+  const [showCorrectionForm, setShowCorrectionForm] = useState(defaultAction === 'correct');
   const [corrections, setCorrections] = useState({
     name: '',
     program: '',
@@ -21,27 +23,30 @@ export function StudentVerify() {
   });
 
   useEffect(() => {
-    async function fetchTokenDetails() {
+    async function fetchPayload() {
       try {
         setLoading(true);
-        const res = await publicApi.getTokenDetails(token);
+        const res = await publicApi.getVerificationPayload(token);
         setData(res);
+        if (res.already_verified) {
+          setConfirmed(true);
+        }
       } catch (err) {
-        setError(err.message || 'Invalid or expired verification link.');
+        setError(err.message || 'Verification link is invalid or has expired.');
       } finally {
         setLoading(false);
       }
     }
-    fetchTokenDetails();
+    fetchPayload();
   }, [token]);
 
   const handleConfirm = async () => {
     setSubmitting(true);
     try {
-      await publicApi.confirmToken(token);
+      await publicApi.confirmVerification(token);
       setConfirmed(true);
     } catch (err) {
-      alert(err.message || 'Failed to confirm record.');
+      alert(err.message || 'Failed to confirm details.');
     } finally {
       setSubmitting(false);
     }
@@ -51,10 +56,10 @@ export function StudentVerify() {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await publicApi.correctToken(token, corrections);
+      await publicApi.submitCorrection(token, corrections);
       setConfirmed(true);
     } catch (err) {
-      alert(err.message || 'Failed to submit corrections.');
+      alert(err.message || 'Failed to submit correction proposal.');
     } finally {
       setSubmitting(false);
     }
@@ -63,7 +68,7 @@ export function StudentVerify() {
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <div className="text-center text-xs text-slate-500">Loading student record details...</div>
+        <div className="text-xs text-slate-500 font-medium">Validating verification security token...</div>
       </div>
     );
   }
@@ -71,16 +76,13 @@ export function StudentVerify() {
   if (error) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-white p-8 rounded-xl shadow-md border border-slate-200 text-center space-y-4">
+        <div className="max-w-md w-full bg-white p-8 rounded-2xl shadow-sm border border-slate-200 text-center space-y-4">
           <AlertCircle className="h-10 w-10 text-rose-500 mx-auto" />
-          <h2 className="text-lg font-bold text-slate-800">Verification Link Unavailable</h2>
+          <h2 className="text-lg font-bold text-[#272727]">Verification Link Expired or Invalid</h2>
           <p className="text-xs text-slate-500">{error}</p>
-          <Link
-            to="/login"
-            className="inline-block text-xs font-semibold text-teal-600 hover:text-teal-800"
-          >
-            Go to Platform Login
-          </Link>
+          <div className="text-[11px] text-slate-400 pt-2 border-t border-slate-100">
+            Prototype built for SIH26263. Not an official Government of India service.
+          </div>
         </div>
       </div>
     );
@@ -89,152 +91,159 @@ export function StudentVerify() {
   if (confirmed) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-white p-8 rounded-xl shadow-md border border-slate-200 text-center space-y-4">
-          <CheckCircle2 className="h-12 w-12 text-emerald-500 mx-auto" />
-          <h2 className="text-xl font-bold text-[#1a3a5c]">Record Successfully Verified!</h2>
+        <div className="max-w-md w-full bg-white p-8 rounded-2xl shadow-sm border border-slate-200 text-center space-y-4">
+          <CheckCircle2 className="h-12 w-12 text-[#1b756b] mx-auto" />
+          <h2 className="text-xl font-bold text-[#272727]">Verification Response Recorded</h2>
           <p className="text-xs text-slate-600">
-            Thank you for confirming your academic enrollment data. Your response has been securely logged to the immutable audit trail.
+            Thank you. Your confirmation has been permanently recorded to the platform's tamper-evident audit ledger.
           </p>
-          <div className="p-3 bg-slate-50 rounded text-slate-500 text-[11px] font-mono">
-            Status: Confirmed / Logged
+          <div className="p-3 bg-slate-50 rounded-xl text-slate-500 text-[11px] font-mono">
+            Status: Processed & Logged
+          </div>
+          <div className="text-[11px] text-slate-400 pt-2 border-t border-slate-100">
+            Prototype built for SIH26263. Not an official Government of India service.
           </div>
         </div>
       </div>
     );
   }
 
-  const { student } = data;
-
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-between">
-      {/* Official banner */}
-      <header className="bg-[#1a3a5c] text-white py-4 px-6 shadow-sm">
-        <div className="max-w-md mx-auto flex items-center space-x-2">
-          <ShieldCheck className="h-6 w-6 text-[#0d9488]" />
+      {/* Brand Top Header */}
+      <header className="bg-white border-b border-slate-200 py-4 px-6 shadow-sm">
+        <div className="max-w-md mx-auto flex items-center space-x-3">
+          <div className="h-8 w-8 rounded-lg bg-[#1b756b] flex items-center justify-center text-white font-bold text-sm">
+            SDV
+          </div>
           <div>
-            <h1 className="font-bold text-sm tracking-wide">AICTE National Student Registry</h1>
-            <span className="block text-[10px] text-teal-300">Self-Verification Portal (DEMO)</span>
+            <h1 className="font-bold text-sm text-[#272727]">Student Record Verification</h1>
+            <span className="block text-[11px] text-[#1b756b]">Self-Confirmation Portal</span>
           </div>
         </div>
       </header>
 
       <div className="flex-1 max-w-md w-full mx-auto p-4 flex items-center">
-        <div className="w-full bg-white rounded-xl shadow-md border border-slate-200 p-6 space-y-6">
+        <div className="w-full bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-5">
           <div>
-            <span className="text-[10px] font-semibold tracking-wider text-teal-600 uppercase bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
-              Action Required
+            <span className="text-[10px] font-semibold tracking-wider text-[#1b756b] uppercase bg-[#d7f9e4] px-2 py-0.5 rounded-full border border-teal-200">
+              Student Action Required
             </span>
-            <h2 className="text-lg font-bold text-[#1a3a5c] mt-2">Confirm Your Student Details</h2>
+            <h2 className="text-lg font-bold text-[#272727] mt-2">Confirm Your Enrollment Details</h2>
             <p className="text-xs text-slate-500 mt-1">
-              Please inspect the academic details submitted by your institution below.
+              Please inspect the academic enrollment details submitted by your institution:
             </p>
           </div>
 
           {/* Student Record Card */}
-          <div className="bg-slate-50 rounded-lg p-4 border border-slate-200 space-y-3 text-xs">
-            <div className="flex justify-between border-b border-slate-200 pb-2">
+          <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-2.5 text-xs">
+            <div className="flex justify-between border-b border-slate-200/60 pb-2">
               <span className="text-slate-500">Student Name:</span>
-              <span className="font-semibold text-slate-800">{student?.name}</span>
+              <span className="font-semibold text-[#272727]">{data?.student_name}</span>
             </div>
-            <div className="flex justify-between border-b border-slate-200 pb-2">
-              <span className="text-slate-500">Masked APAAR ID:</span>
-              <span className="font-mono font-bold text-teal-700">{student?.apaar_id_masked}</span>
-            </div>
-            <div className="flex justify-between border-b border-slate-200 pb-2">
+            <div className="flex justify-between border-b border-slate-200/60 pb-2">
               <span className="text-slate-500">Institution:</span>
-              <span className="font-semibold text-slate-800 text-right">{student?.institute}</span>
+              <span className="font-semibold text-[#272727] text-right">{data?.institute_name}</span>
             </div>
-            <div className="flex justify-between border-b border-slate-200 pb-2">
-              <span className="text-slate-500">Programme:</span>
-              <span className="font-semibold text-slate-800 text-right">{student?.program}</span>
+            <div className="flex justify-between border-b border-slate-200/60 pb-2">
+              <span className="text-slate-500">Enrolled Programme:</span>
+              <span className="font-semibold text-[#272727] text-right">{data?.program}</span>
+            </div>
+            <div className="flex justify-between border-b border-slate-200/60 pb-2">
+              <span className="text-slate-500">Enrolment Year:</span>
+              <span className="font-semibold text-[#272727]">{data?.enrollment_year}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-500">Enrollment Year:</span>
-              <span className="font-semibold text-slate-800">{student?.enrollment_year}</span>
+              <span className="text-slate-500">Masked APAAR ID:</span>
+              <span className="font-mono font-bold text-[#1b756b]">{data?.apaar_id_masked}</span>
             </div>
           </div>
 
           {!showCorrectionForm ? (
-            <div className="space-y-3">
+            <div className="space-y-2.5">
               <button
                 type="button"
                 onClick={handleConfirm}
                 disabled={submitting}
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 px-4 rounded-lg text-xs font-semibold shadow transition disabled:opacity-50 flex items-center justify-center space-x-1.5"
+                className="w-full bg-[#1b756b] hover:bg-[#145952] text-white py-2.5 px-4 rounded-xl text-xs font-semibold shadow-sm transition disabled:opacity-50 flex items-center justify-center space-x-2"
               >
                 <CheckCircle2 className="h-4 w-4" />
-                <span>{submitting ? 'Confirming...' : 'Yes, My Details Are Correct'}</span>
+                <span>{submitting ? 'Confirming...' : 'Yes, my details are correct'}</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setShowCorrectionForm(true)}
-                className="w-full bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 py-2.5 px-4 rounded-lg text-xs font-semibold shadow-sm transition flex items-center justify-center space-x-1.5"
+                className="w-full bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 py-2.5 px-4 rounded-xl text-xs font-semibold shadow-sm transition flex items-center justify-center space-x-2"
               >
                 <Edit3 className="h-4 w-4 text-slate-500" />
-                <span>No, Request a Correction</span>
+                <span>No, I need to correct something</span>
               </button>
             </div>
           ) : (
             <form onSubmit={handleCorrectionSubmit} className="space-y-3 pt-2 border-t border-slate-200">
-              <h3 className="text-xs font-bold text-slate-800">Submit Corrections to Institution</h3>
+              <h3 className="text-xs font-bold text-[#272727]">Propose Correction to Institution</h3>
 
               <div>
-                <label className="block text-[11px] font-semibold text-slate-600 mb-1">Correct Name</label>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">Proposed Name</label>
                 <input
                   type="text"
-                  placeholder={student?.name}
+                  placeholder={data?.student_name}
                   value={corrections.name}
                   onChange={(e) => setCorrections({ ...corrections, name: e.target.value })}
-                  className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded focus:ring-2 focus:ring-[#0d9488] outline-none"
+                  className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg outline-none focus:ring-1 focus:ring-[#1b756b]"
                 />
               </div>
 
               <div>
-                <label className="block text-[11px] font-semibold text-slate-600 mb-1">Correct Programme</label>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">Proposed Programme</label>
                 <input
                   type="text"
-                  placeholder={student?.program}
+                  placeholder={data?.program}
                   value={corrections.program}
                   onChange={(e) => setCorrections({ ...corrections, program: e.target.value })}
-                  className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded focus:ring-2 focus:ring-[#0d9488] outline-none"
+                  className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg outline-none focus:ring-1 focus:ring-[#1b756b]"
                 />
               </div>
 
               <div>
-                <label className="block text-[11px] font-semibold text-slate-600 mb-1">Notes / Discrepancy details</label>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">Reason / Notes</label>
                 <textarea
                   rows="2"
-                  placeholder="Explain the error..."
+                  placeholder="Explain the correction..."
                   value={corrections.notes}
                   onChange={(e) => setCorrections({ ...corrections, notes: e.target.value })}
-                  className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded focus:ring-2 focus:ring-[#0d9488] outline-none"
+                  className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg outline-none focus:ring-1 focus:ring-[#1b756b]"
                 />
               </div>
 
-              <div className="flex space-x-2 pt-2">
+              <div className="flex space-x-2 pt-1">
                 <button
                   type="button"
                   onClick={() => setShowCorrectionForm(false)}
-                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 rounded text-xs font-semibold"
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 rounded-lg text-xs font-semibold"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="flex-1 bg-[#1a3a5c] hover:bg-[#122942] text-white py-2 rounded text-xs font-semibold disabled:opacity-50"
+                  className="flex-1 bg-[#1b756b] hover:bg-[#145952] text-white py-2 rounded-lg text-xs font-semibold disabled:opacity-50"
                 >
                   {submitting ? 'Submitting...' : 'Submit Request'}
                 </button>
               </div>
             </form>
           )}
+
+          <div className="text-[11px] text-slate-400 text-center">
+            • Single-use security token • No password required
+          </div>
         </div>
       </div>
 
-      <footer className="text-center py-4 text-[11px] text-slate-400">
-        Demo build for SIH26263 • No actual student data altered
+      <footer className="text-center py-4 text-[11px] text-slate-500 border-t border-slate-200 bg-white">
+        Prototype built for SIH26263. Not an official Government of India service.
       </footer>
     </div>
   );
