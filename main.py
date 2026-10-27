@@ -7,11 +7,19 @@ from api.batch_routes import batch_router
 # Initialize database schema tables on startup
 Base.metadata.create_all(bind=engine)
 
-# Seed initial honeytoken canaries if table is empty
+# Seed initial honeytoken canaries & demo institutes if table is empty
 from models.database import SessionLocal
 from security.honeytokens import seed_honeytokens
+from models.models import Institute
+from data.seed_demo_data import generate_seed_data
+
 with SessionLocal() as db_session:
     seed_honeytokens(db_session, count=10)
+    # If freshly deployed on Render without seed data, auto-seed demo institutes & students
+    if db_session.query(Institute).count() == 0:
+        print("Auto-seeding default demo institutions and synthetic students for cloud deployment...")
+        db_session.close()
+        generate_seed_data()
 
 app = FastAPI(
     title="APAAR Student Data Verification Platform (SIH26263)",
