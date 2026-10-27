@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_URL || '/api';
+const API_BASE = import.meta.env.VITE_API_URL || 'https://sihps1-llq1.onrender.com';
 
 export function getAuthToken() {
   return localStorage.getItem('token');
