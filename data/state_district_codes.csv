@@ -1,0 +1,21 @@
+state_code,district_code,state_name,district_name
+27,01,Maharashtra,Mumbai Suburban
+27,02,Maharashtra,Pune
+27,03,Maharashtra,Mumbai City
+33,01,Tamil Nadu,Chennai
+33,02,Tamil Nadu,Vellore
+33,03,Tamil Nadu,Chengalpattu
+33,04,Tamil Nadu,Coimbatore
+33,05,Tamil Nadu,Tiruchirappalli
+07,01,Delhi,North West Delhi
+07,02,Delhi,South Delhi
+07,03,Delhi,South West Delhi
+08,01,Rajasthan,Jaipur
+08,02,Rajasthan,Jhunjhunu
+09,01,Uttar Pradesh,Kanpur Nagar
+09,02,Uttar Pradesh,Prayagraj
+19,01,West Bengal,Kolkata
+29,01,Karnataka,Udupi
+29,02,Karnataka,Dakshina Kannada
+03,01,Punjab,Patiala
+
