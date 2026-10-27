@@ -405,16 +405,23 @@ export function InstitutePortal() {
                   <div className="flex flex-wrap items-center gap-2">
                     {batchDetails.status === 'draft' && (
                       <>
+                        {batchDetails.student_count === 0 && (
+                          <span className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded">
+                            Upload roster on the left to attach students
+                          </span>
+                        )}
                         <button
                           onClick={() => handleGenerateTokens(batchDetails.batch_id)}
-                          className="bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow transition flex items-center space-x-1"
+                          disabled={batchDetails.student_count === 0}
+                          className="bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow transition flex items-center space-x-1 disabled:opacity-40"
                         >
                           <Users className="h-3.5 w-3.5" />
                           <span>Generate Self-Verify Links</span>
                         </button>
                         <button
                           onClick={() => handlePushBatch(batchDetails.batch_id)}
-                          className="bg-[#1a3a5c] hover:bg-[#122942] text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow transition flex items-center space-x-1"
+                          disabled={batchDetails.student_count === 0}
+                          className="bg-[#1a3a5c] hover:bg-[#122942] text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow transition flex items-center space-x-1 disabled:opacity-40"
                         >
                           <Send className="h-3.5 w-3.5" />
                           <span>Push to AICTE</span>

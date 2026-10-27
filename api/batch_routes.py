@@ -124,6 +124,12 @@ def create_batch(
     db.commit()
     db.refresh(batch)
 
+    # Automatically attach all current students of this institute to the batch
+    inst_students = db.query(Student).filter(Student.institute_id == inst_id).all()
+    for s in inst_students:
+        db.add(StudentBatch(batch_id=batch.id, student_id=s.id))
+    db.commit()
+
     log_event(db=db, record_type="Batch", record_id=batch.id, event_type="CREATE",
               actor=current_user.get("sub", "institute_admin"))
 
@@ -132,6 +138,7 @@ def create_batch(
         "name": batch.name,
         "status": batch.status,
         "institute_id": batch.institute_id,
+        "student_count": len(inst_students),
         "created_at": batch.created_at,
     }
 

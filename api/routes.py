@@ -155,6 +155,26 @@ async def upload_students(
         actor=current_user.get("sub", "institute_admin")
     )
 
+    # If there is an active draft batch for this institute, auto-link newly ingested students
+    try:
+        active_draft = db.query(Batch).filter(
+            Batch.institute_id == institute_id,
+            Batch.status == "draft"
+        ).order_by(Batch.created_at.desc()).first()
+
+        if active_draft:
+            inst_students = db.query(Student).filter(Student.institute_id == institute_id).all()
+            for std in inst_students:
+                already_linked = db.query(StudentBatch).filter(
+                    StudentBatch.batch_id == active_draft.id,
+                    StudentBatch.student_id == std.id
+                ).first()
+                if not already_linked:
+                    db.add(StudentBatch(batch_id=active_draft.id, student_id=std.id))
+            db.commit()
+    except Exception as e:
+        print("Auto-link batch notice:", e)
+
     # Automatically trigger dedup & graph check in background/post-upload for proactive integrity
     run_deduplication(db)
     analyze_graph_fraud(db)

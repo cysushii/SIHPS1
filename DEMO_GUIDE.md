@@ -102,3 +102,4 @@ Follow this exact flow during your pitch or evaluation:
 4. Change **any single character** in the student's name or degree program in the form.
 5. Click **Verify RSA Signature** again $\rightarrow$ immediately shows **TAMPER DETECTED / INVALID SIGNATURE** (red).
 6. Explain to the judges: *Even a single-byte alteration invalidates the SHA-256 digest and breaks the RSA-2048 mathematical signature.*
+
