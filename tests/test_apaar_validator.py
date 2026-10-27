@@ -33,20 +33,11 @@ def test_non_numeric():
     assert is_valid is False
     assert "numeric" in msg
 
-def test_future_unreasonable_year():
+def test_12_digits_allowed():
+    # Any 12 digits format is valid
     is_valid, msg = validate_apaar_format("991234567890")
-    assert is_valid is False
-    assert "year prefix" in msg
-
-def test_identical_digits():
-    is_valid, msg = validate_apaar_format("111111111111")
-    assert is_valid is False
-    assert "identical digits" in msg
-
-def test_sequential_digits():
-    is_valid, msg = validate_apaar_format("012345678901")
-    assert is_valid is False
-    assert "sequential series" in msg
+    assert is_valid is True
+    assert "Valid" in msg
 
 # --- FUNCTION 1: Geographic Consistency Check Tests ---
 def test_geographic_consistency_match(db_session):

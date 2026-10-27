@@ -110,6 +110,24 @@ def load_reference_data():
     db.close()
     print(f"Reference data loaded: {inst_count} institutions, {prog_count} approved programmes.")
 
+def list_institutes():
+    """List loaded institutes with their ID, AICTE code, and name."""
+    db = SessionLocal()
+    institutes = db.query(Institute).order_by(Institute.id.asc()).all()
+    if not institutes:
+        print("No institutes found in database. Run 'python cli.py load-reference-data' first.")
+        db.close()
+        return
+
+    print("\nLoaded Institutions:")
+    print(f"{'ID':<6} {'AICTE Code':<16} {'Institution Name'}")
+    print("-" * 70)
+    for inst in institutes:
+        name_clean = format_title_case(inst.name)
+        print(f"{inst.id:<6} {inst.aicte_code:<16} {name_clean}")
+    print(f"\nTotal: {len(institutes)} institution(s)\n")
+    db.close()
+
 def create_user(email: str, password: str, role: str, institute_id: int | None = None, full_name: str | None = None):
     db = SessionLocal()
     existing = db.query(User).filter(User.email.ilike(email.strip())).first()
@@ -137,6 +155,7 @@ if __name__ == "__main__":
 
     subparsers.add_parser("reset-db", help="Reset DB & recreate fresh tables and Genesis block")
     subparsers.add_parser("load-reference-data", help="Load official AICTE approval and reference CSVs")
+    subparsers.add_parser("list-institutes", help="List all loaded institutions with their IDs and names")
 
     user_parser = subparsers.add_parser("create-user", help="Create a platform user account")
     user_parser.add_argument("--email", required=True, help="User email address")
@@ -151,6 +170,8 @@ if __name__ == "__main__":
         reset_db()
     elif args.command == "load-reference-data":
         load_reference_data()
+    elif args.command == "list-institutes":
+        list_institutes()
     elif args.command == "create-user":
         create_user(args.email, args.password, args.role, args.institute_id, args.name)
     else:

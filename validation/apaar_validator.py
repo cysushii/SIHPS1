@@ -28,12 +28,8 @@ def _get_location_mapping() -> dict[str, dict[str, str]]:
 
 def validate_apaar_format(apaar_id: str) -> tuple[bool, str]:
     """
-    Validates structural integrity of APAAR ID.
-    APAAR ID is a 12-digit number:
-    - Exactly 12 digits
-    - Numeric only
-    - First 2 digits form a plausible year (00-30 representing 2000-2030)
-    - No obviously invalid patterns (all same digit, strictly sequential digits)
+    Validates format integrity of APAAR ID.
+    APAAR ID is exactly 12 numeric digits.
     """
     if not isinstance(apaar_id, str):
         return False, "APAAR ID must be a string."
@@ -46,22 +42,7 @@ def validate_apaar_format(apaar_id: str) -> tuple[bool, str]:
     if not clean_id.isdigit():
         return False, "APAAR ID must contain only numeric digits."
 
-    # First 2 digits represent registration year: 00-30 (2000 to 2030)
-    year_prefix = int(clean_id[:2])
-    if year_prefix > 30:
-        return False, f"Invalid registration year prefix '{clean_id[:2]}'. Expected '00'-'30' (years 2000-2030)."
-
-    # Reject all same digit (e.g. '111111111111', '000000000000')
-    if len(set(clean_id)) == 1:
-        return False, "APAAR ID cannot consist of identical digits."
-
-    # Reject obvious sequential sequences (e.g. '012345678901', '123456789012', '987654321098')
-    sequential_asc = "01234567890123456789"
-    sequential_desc = "98765432109876543210"
-    if clean_id in sequential_asc or clean_id in sequential_desc:
-        return False, "APAAR ID cannot be a sequential series of digits."
-
-    return True, "Valid APAAR ID structure."
+    return True, "Valid APAAR ID format."
 
 def check_geographic_consistency(apaar_id: str, institute_id: int, db) -> dict:
     """

@@ -10,7 +10,7 @@ A prototype platform designed for official regulatory review, cryptographic audi
 
 1. **Deterministic Verification Engine (SSE Streamed)**:
    - 10-check validation pipeline executed in real-time against authentic uploaded roster and AICTE reference datasets.
-   - Per-student validation: APAAR ID format (Luhn/Verhoeff check), Honeytoken canary detection, cross-institution duplicate enrollment, fuzzy name + DOB matching, student confirmation state, geographic/lifecycle plausibility, field consistency.
+   - Per-student validation: APAAR ID format (exactly 12 digits), Honeytoken canary detection, cross-institution duplicate enrollment, fuzzy name + DOB matching, student confirmation state, geographic/lifecycle plausibility, field consistency.
    - Batch-level checks: Approved intake capacity comparison against official AICTE Extension of Approval data, closed courses check.
    - Live streaming execution via Server-Sent Events (SSE).
    - Approval gate blocking batch approval until all flagged records have reviewer notes.
@@ -45,14 +45,19 @@ python cli.py load-reference-data
 
 ### 2. User Account Creation
 
+Find your institution ID using:
+```bash
+python cli.py list-institutes
+```
+
 Accounts are provisioned securely via CLI or through the AICTE Admin "Onboard Institute" portal:
 
 ```bash
 # Create an AICTE Regulatory Admin:
-python cli.py create-user --email admin@aicte.gov.in --password "AdminSecret123!" --role aicte_admin --name "AICTE Administrator"
+python cli.py create-user --email admin@example.com --password "<STRONG_PASSWORD>" --role aicte_admin --name "AICTE Administrator"
 
 # Create an Institution Administrator:
-python cli.py create-user --email principal@mit.edu --password "InstituteSecret123!" --role institute_admin --institute-id 1 --name "Institute Admin"
+python cli.py create-user --email principal@example.com --password "<STRONG_PASSWORD>" --role institute_admin --institute-id 1 --name "Institute Admin"
 ```
 
 ### 3. Running Backend & Frontend
@@ -75,6 +80,8 @@ Copy `.env.example` to `.env` and configure:
 
 | Variable | Description |
 |---|---|
+| `APP_BASE_URL` | Public frontend URL used to build student verification links in emails |
+| `MAIL_FROM_NAME` | Display sender name in verification emails (e.g. `Student Data Platform Verification`) |
 | `SMTP_HOST` | Outbound SMTP host (e.g., `smtp.gmail.com`) |
 | `SMTP_PORT` | Outbound SMTP port (`587`) |
 | `SMTP_USER` | SMTP username / email address |
