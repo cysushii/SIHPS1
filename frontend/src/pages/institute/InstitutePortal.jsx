@@ -294,6 +294,9 @@ export function InstitutePortal() {
                   {uploadResult.rejected > 0 && (
                     <div className="text-rose-600 font-medium">✕ {uploadResult.rejected} rows rejected</div>
                   )}
+                  <div className="mt-2 pt-2 border-t border-slate-200 text-teal-700 font-semibold flex items-center gap-1">
+                    ✅ Students ready! Now create a new batch below ↓
+                  </div>
                 </div>
               )}
             </div>

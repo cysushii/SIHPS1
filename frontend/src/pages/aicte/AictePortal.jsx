@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Header, Footer, StatusChip, EmailServiceChip } from '../../components/Layout';
 import { useAuth } from '../../context/AuthContext';
-import { aicteApi, getAuthToken } from '../../api/api';
+import { aicteApi, getAuthToken, isDemoMode } from '../../api/api';
 import { formatTitleCase, getStatusLabel, getCheckLabel, CHECK_LABELS } from '../../utils/formatters';
 import {
   ShieldCheck,
@@ -106,6 +106,47 @@ export function AictePortal() {
     setCurrentStageIndex(0);
     setSelectedStudentDetail(null);
 
+    // ── DEMO MODE: simulate pipeline with mock students ──────────────────
+    if (isDemoMode()) {
+      const mockStudents = (batch.students || []).map((s, i) => ({
+        student_id: s.student_id || i + 1,
+        student_name: s.name || `Student ${i + 1}`,
+        apaar_id: s.apaar_id_masked || '****DEMO',
+        program: s.program || 'B.Tech',
+        enrollment_year: s.enrollment_year || '2022',
+        verdict: i === batch.students.length - 1 ? 'needs_review' : 'cleared',
+        checks: {
+          fmt: 'pass', canary: 'pass', exact: 'pass',
+          fuzzy: i === batch.students.length - 1 ? 'flag' : 'pass',
+          confirm: 'pass', geo: 'pass', life: 'pass',
+        },
+        index: i,
+        total_students: batch.students.length,
+        result_id: i + 1,
+      }));
+
+      let idx = 0;
+      const interval = setInterval(() => {
+        if (idx < mockStudents.length) {
+          const s = mockStudents[idx];
+          setStreamedStudents((prev) => [...prev, s]);
+          setCurrentStageIndex(Math.min(10, Math.floor(((idx + 1) / mockStudents.length) * 10)));
+          idx++;
+        } else {
+          clearInterval(interval);
+          setCurrentStageIndex(10);
+          setRunSummary({
+            total: mockStudents.length,
+            cleared: mockStudents.filter(s => s.verdict === 'cleared').length,
+            needs_review: mockStudents.filter(s => s.verdict === 'needs_review').length,
+            blocked: 0,
+          });
+        }
+      }, 300);
+      return;
+    }
+    // ── END DEMO MODE ────────────────────────────────────────────────────
+
     const token = getAuthToken();
     const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
     const sseUrl = `${API_BASE}/aicte/batches/${batch.batch_id}/run-verification?token=${encodeURIComponent(token)}`;
@@ -148,6 +189,13 @@ export function AictePortal() {
     setRunSummary(null);
     setCurrentStageIndex(0);
     setSelectedStudentDetail(null);
+
+    // In demo mode, just kick off the simulated pipeline
+    if (isDemoMode()) {
+      handleBeginVerification(batch);
+      return;
+    }
+
     try {
       const run = await aicteApi.getLastRun(batch.batch_id);
       if (run.has_run && run.students?.length > 0) {
