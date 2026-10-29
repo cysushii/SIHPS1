@@ -102,6 +102,61 @@ export function Login() {
           <div className="mt-6 pt-5 border-t border-slate-100 text-[11px] text-slate-500 text-center">
             Accounts are provisioned by the AICTE Regulatory Desk or via CLI management.
           </div>
+
+          {/* Static Preview Quick Demo Access */}
+          <div className="mt-4 p-3 bg-slate-50 rounded-xl border border-slate-200 text-center">
+            <span className="block text-[11px] font-semibold text-slate-600 mb-2">
+              Preview Mode — Click to Explore Dashboards:
+            </span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const demoInstituteUser = {
+                    token: 'demo-preview-token',
+                    role: 'institute_admin',
+                    institute_id: 1,
+                    institute_name: 'L M Thapar School Of Management',
+                    email: 'principal@example.com',
+                    full_name: 'Institute Administrator',
+                  };
+                  localStorage.setItem('token', demoInstituteUser.token);
+                  localStorage.setItem('role', demoInstituteUser.role);
+                  localStorage.setItem('institute_id', String(demoInstituteUser.institute_id));
+                  localStorage.setItem('institute_name', demoInstituteUser.institute_name);
+                  localStorage.setItem('email', demoInstituteUser.email);
+                  localStorage.setItem('full_name', demoInstituteUser.full_name);
+                  window.location.href = `${import.meta.env.BASE_URL}institute/dashboard`;
+                }}
+                className="flex-1 py-1.5 px-2 bg-white hover:bg-teal-50 hover:text-[#1b756b] border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 transition shadow-xs"
+              >
+                🏫 Institute Portal
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const demoAicteUser = {
+                    token: 'demo-preview-token',
+                    role: 'aicte_admin',
+                    institute_id: null,
+                    institute_name: '',
+                    email: 'admin@example.com',
+                    full_name: 'AICTE Administrator',
+                  };
+                  localStorage.setItem('token', demoAicteUser.token);
+                  localStorage.setItem('role', demoAicteUser.role);
+                  localStorage.removeItem('institute_id');
+                  localStorage.removeItem('institute_name');
+                  localStorage.setItem('email', demoAicteUser.email);
+                  localStorage.setItem('full_name', demoAicteUser.full_name);
+                  window.location.href = `${import.meta.env.BASE_URL}aicte/overview`;
+                }}
+                className="flex-1 py-1.5 px-2 bg-white hover:bg-teal-50 hover:text-[#1b756b] border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 transition shadow-xs"
+              >
+                🏛️ AICTE Portal
+              </button>
+            </div>
+          </div>
         </div>
       </main>
 
