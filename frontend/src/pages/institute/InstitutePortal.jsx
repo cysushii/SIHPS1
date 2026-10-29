@@ -258,9 +258,16 @@ export function InstitutePortal() {
                 <Upload className="h-5 w-5 text-[#1b756b]" />
                 <h2 className="text-sm font-bold text-[#272727]">Upload Student Roster</h2>
               </div>
-              <p className="text-xs text-slate-500 mb-4">
+              <p className="text-xs text-slate-500 mb-3">
                 Upload CSV roster with mandatory columns: apaar_id, name, program, enrollment_year, and email.
               </p>
+              <a
+                href={`${import.meta.env.BASE_URL}sample_roster.csv`}
+                download="sample_roster.csv"
+                className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#1b756b] hover:underline mb-3"
+              >
+                ⬇ Download Sample CSV
+              </a>
 
               <form onSubmit={handleFileUpload} className="space-y-3">
                 <input
