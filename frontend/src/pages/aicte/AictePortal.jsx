@@ -107,7 +107,7 @@ export function AictePortal() {
     setSelectedStudentDetail(null);
 
     const token = getAuthToken();
-    const API_BASE = import.meta.env.VITE_API_URL || 'https://sihps1-llq1.onrender.com';
+    const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
     const sseUrl = `${API_BASE}/aicte/batches/${batch.batch_id}/run-verification?token=${encodeURIComponent(token)}`;
 
     const eventSource = new EventSource(sseUrl);
@@ -144,17 +144,28 @@ export function AictePortal() {
   const handleOpenPreviousRun = async (batch) => {
     setActiveRunBatch(batch);
     setRunStarted(true);
+    setStreamedStudents([]);
+    setRunSummary(null);
+    setCurrentStageIndex(0);
+    setSelectedStudentDetail(null);
     try {
       const run = await aicteApi.getLastRun(batch.batch_id);
-      if (run.has_run) {
+      if (run.has_run && run.students?.length > 0) {
+        // Normalize field names to match SSE format
+        const normalized = run.students.map((s) => ({
+          ...s,
+          apaar_id: s.apaar_id_masked || s.apaar_id || '',
+        }));
         setRunSummary(run.summary);
-        setStreamedStudents(run.students || []);
+        setStreamedStudents(normalized);
         setCurrentStageIndex(10);
       } else {
+        // No saved results — start a fresh run
         handleBeginVerification(batch);
       }
     } catch (err) {
       console.error(err);
+      handleBeginVerification(batch);
     }
   };
 
@@ -174,8 +185,18 @@ export function AictePortal() {
       // Refresh run results
       const updated = await aicteApi.getLastRun(activeRunBatch.batch_id);
       if (updated.has_run) {
-        setStreamedStudents(updated.students || []);
+        const normalized = (updated.students || []).map((s) => ({
+          ...s,
+          apaar_id: s.apaar_id_masked || s.apaar_id || '',
+        }));
+        setStreamedStudents(normalized);
         setRunSummary(updated.summary);
+
+        // Also update selectedStudentDetail if it's currently selected
+        if (selectedStudentDetail) {
+          const match = normalized.find((s) => s.student_id === selectedStudentDetail.student_id);
+          if (match) setSelectedStudentDetail(match);
+        }
       }
     } catch (err) {
       setActionMessage({ type: 'error', text: err.message });
@@ -675,12 +696,13 @@ export function AictePortal() {
                         <th className="px-2 py-2.5 text-center">Geo</th>
                         <th className="px-2 py-2.5 text-center">Life</th>
                         <th className="px-2 py-2.5 text-center">Verdict</th>
+                        <th className="px-2 py-2.5 text-center">Review</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {filteredStudents.length === 0 ? (
                         <tr>
-                          <td colSpan={9} className="px-4 py-8 text-center text-slate-400">
+                          <td colSpan={10} className="px-4 py-8 text-center text-slate-400">
                             {streamedStudents.length === 0
                               ? 'Executing verification pipeline...'
                               : 'No students matching filter.'}
@@ -728,6 +750,19 @@ export function AictePortal() {
 
                               <td className="px-2 py-2 text-center">
                                 <StatusChip status={std.verdict} label={getStatusLabel(std.verdict)} />
+                              </td>
+                              <td className="px-2 py-2 text-center">
+                                {std.reviewer_decision ? (
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 capitalize" title={std.reviewer_note}>
+                                    ✓ {std.reviewer_decision}
+                                  </span>
+                                ) : (std.verdict === 'needs_review' || std.verdict === 'blocked') ? (
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800">
+                                    Pending
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400 text-[10px]">-</span>
+                                )}
                               </td>
                             </tr>
                           );

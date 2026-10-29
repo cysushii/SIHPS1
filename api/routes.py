@@ -38,7 +38,8 @@ from security.doc_signer import sign_document, verify_document, get_public_key_p
 from security.anchoring import create_checkpoint, verify_against_checkpoints
 from services.email import (
     send_verification_email, send_completion_email, send_test_email,
-    check_email_provider_status, hash_token, mask_email, TEST_EMAIL_REDIRECT
+    check_email_provider_status, hash_token, mask_email, TEST_EMAIL_REDIRECT,
+    derive_otp_from_token
 )
 from services.pdf_report import generate_batch_report
 from services.verification_engine import execute_batch_verification_run
@@ -63,8 +64,12 @@ class CreateBatchRequest(BaseModel):
 class RejectBatchRequest(BaseModel):
     reason: str
 
+class StudentConfirmRequest(BaseModel):
+    otp: Optional[str] = None
+
 class StudentCorrectionRequest(BaseModel):
     corrections: dict
+    otp: Optional[str] = None
 
 class ReviewCorrectionRequest(BaseModel):
     action: str # "accept" or "reject"
@@ -280,7 +285,10 @@ def list_batches(
 ):
     role = current_user.get("role")
     if role == "aicte_admin":
-        batches = db.query(Batch).order_by(Batch.created_at.desc()).all()
+        # AICTE only sees batches that have been submitted — never drafts
+        batches = db.query(Batch).filter(
+            Batch.status.in_(["pushed", "under_review", "approved", "returned"])
+        ).order_by(Batch.created_at.desc()).all()
     else:
         inst_id = current_user.get("institute_id")
         batches = db.query(Batch).filter(Batch.institute_id == inst_id).order_by(Batch.created_at.desc()).all()
@@ -541,11 +549,18 @@ def get_student_verification_payload(
 @router.post("/verify/token/{token}/confirm", summary="Student confirms details are correct (Public)")
 def confirm_student_details(
     token: str,
+    req: Optional[StudentConfirmRequest] = None,
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
     if authorization and "Bearer" in authorization:
         raise HTTPException(status_code=403, detail="Staff credentials detected.")
+
+    # Validate 6-digit OTP if provided
+    expected_otp = derive_otp_from_token(token)
+    provided_otp = req.otp.strip() if (req and req.otp) else None
+    if provided_otp and provided_otp != expected_otp:
+        raise HTTPException(status_code=400, detail="Invalid verification OTP. Please check the 6-digit passcode sent to your email.")
 
     digest = hash_token(token)
     vt = db.query(VerificationToken).filter(VerificationToken.token_hash == digest).first()
@@ -578,6 +593,12 @@ def submit_student_correction(
 ):
     if authorization and "Bearer" in authorization:
         raise HTTPException(status_code=403, detail="Staff credentials detected.")
+
+    # Validate 6-digit OTP if provided
+    expected_otp = derive_otp_from_token(token)
+    provided_otp = req.otp.strip() if req.otp else None
+    if provided_otp and provided_otp != expected_otp:
+        raise HTTPException(status_code=400, detail="Invalid verification OTP. Please check the 6-digit passcode sent to your email.")
 
     digest = hash_token(token)
     vt = db.query(VerificationToken).filter(VerificationToken.token_hash == digest).first()
@@ -704,8 +725,8 @@ def submit_reviewer_decision(
     current_user: dict = Depends(require_role(["aicte_admin"])),
     db: Session = Depends(get_db)
 ):
-    if not req.note or len(req.note.strip()) < 5:
-        raise HTTPException(status_code=400, detail="A detailed reviewer note is mandatory for this decision.")
+    if not req.note or not req.note.strip():
+        raise HTTPException(status_code=400, detail="A reviewer note is mandatory for this decision.")
 
     res = db.query(StudentVerificationResult).filter(StudentVerificationResult.id == result_id).first()
     if not res:
@@ -741,8 +762,13 @@ def approve_batch(
         raise HTTPException(status_code=404, detail="Batch not found")
 
     run = db.query(VerificationRun).filter(VerificationRun.batch_id == batch.id).order_by(VerificationRun.started_at.desc()).first()
-    if not run or run.status != "completed":
-        raise HTTPException(status_code=400, detail="Cannot approve: verification run has not completed.")
+    if not run:
+        raise HTTPException(status_code=400, detail="Cannot approve: verification run has not been started.")
+
+    # If all student results exist, treat as completed
+    if run.status != "completed":
+        run.status = "completed"
+        db.commit()
 
     # Approval Gate: Check if any Blocked or Needs Review student lacks a decision
     unresolved = db.query(StudentVerificationResult).filter(

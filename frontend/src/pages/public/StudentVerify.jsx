@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { publicApi } from '../../api/api';
-import { CheckCircle2, AlertCircle, Edit3, ArrowRight } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Edit3, ArrowRight, KeyRound } from 'lucide-react';
 
 export function StudentVerify() {
   const { token } = useParams();
@@ -13,6 +13,8 @@ export function StudentVerify() {
   const [error, setError] = useState(null);
   const [confirmed, setConfirmed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [otp, setOtp] = useState('');
+  const [otpError, setOtpError] = useState('');
 
   const [showCorrectionForm, setShowCorrectionForm] = useState(defaultAction === 'correct');
   const [corrections, setCorrections] = useState({
@@ -40,13 +42,29 @@ export function StudentVerify() {
     fetchPayload();
   }, [token]);
 
+  const validateOtp = () => {
+    if (!otp || otp.trim().length !== 6) {
+      setOtpError('Please enter the complete 6-digit passcode sent to your email.');
+      return false;
+    }
+    setOtpError('');
+    return true;
+  };
+
   const handleConfirm = async () => {
+    if (!validateOtp()) return;
     setSubmitting(true);
+    setOtpError('');
     try {
-      await publicApi.confirmVerification(token);
+      await publicApi.confirmVerification(token, otp.trim());
       setConfirmed(true);
     } catch (err) {
-      alert(err.message || 'Failed to confirm details.');
+      const msg = err.message || 'Failed to confirm details.';
+      if (msg.toLowerCase().includes('otp')) {
+        setOtpError(msg);
+      } else {
+        alert(msg);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -54,12 +72,19 @@ export function StudentVerify() {
 
   const handleCorrectionSubmit = async (e) => {
     e.preventDefault();
+    if (!validateOtp()) return;
     setSubmitting(true);
+    setOtpError('');
     try {
-      await publicApi.submitCorrection(token, corrections);
+      await publicApi.submitCorrection(token, corrections, otp.trim());
       setConfirmed(true);
     } catch (err) {
-      alert(err.message || 'Failed to submit correction proposal.');
+      const msg = err.message || 'Failed to submit correction proposal.';
+      if (msg.toLowerCase().includes('otp')) {
+        setOtpError(msg);
+      } else {
+        alert(msg);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -113,11 +138,11 @@ export function StudentVerify() {
       {/* Brand Top Header */}
       <header className="bg-white border-b border-slate-200 py-4 px-6 shadow-sm">
         <div className="max-w-md mx-auto flex items-center space-x-3">
-          <div className="h-8 w-8 rounded-lg bg-[#1b756b] flex items-center justify-center text-white font-bold text-sm">
-            SDV
+          <div className="h-8 px-2.5 rounded-lg bg-[#1b756b] flex items-center justify-center text-white font-bold text-xs tracking-wide">
+            VISHWAS
           </div>
           <div>
-            <h1 className="font-bold text-sm text-[#272727]">Student Record Verification</h1>
+            <h1 className="font-bold text-sm text-[#272727]">Vishwas • Student Record Verification</h1>
             <span className="block text-[11px] text-[#1b756b]">Self-Confirmation Portal</span>
           </div>
         </div>
@@ -157,6 +182,31 @@ export function StudentVerify() {
               <span className="text-slate-500">Masked APAAR ID:</span>
               <span className="font-mono font-bold text-[#1b756b]">{data?.apaar_id_masked}</span>
             </div>
+          </div>
+
+          {/* 6-Digit Verification OTP Input */}
+          <div className="bg-[#f0fdf4] border border-teal-200 rounded-xl p-4 space-y-2">
+            <div className="flex items-center space-x-1.5 text-xs font-bold text-[#1b756b]">
+              <KeyRound className="h-4 w-4" />
+              <span>Enter 6-Digit Email Passcode</span>
+            </div>
+            <p className="text-[11px] text-slate-500 leading-tight">
+              Please enter the 6-digit one-time passcode sent in your verification email:
+            </p>
+            <input
+              type="text"
+              maxLength={6}
+              placeholder="e.g. 583921"
+              value={otp}
+              onChange={(e) => {
+                setOtp(e.target.value.replace(/\D/g, ''));
+                if (otpError) setOtpError('');
+              }}
+              className="w-full text-center tracking-[6px] font-mono text-lg font-bold py-2 px-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-[#1b756b] bg-white text-[#272727]"
+            />
+            {otpError && (
+              <p className="text-[11px] text-rose-600 font-semibold">{otpError}</p>
+            )}
           </div>
 
           {!showCorrectionForm ? (

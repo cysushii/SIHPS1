@@ -1,0 +1,7 @@
+apaar_id,name,program,enrollment_year,email,dob,address,nri_status
+240318492011,Aarav Sharma Duplicate,COMPUTER SCIENCE & ENGINEERING,2024,aarav.dup@example.com,2003-05-14,"Chandigarh, Punjab",General
+249999316538,Security Canary Student,COMPUTER SCIENCE & ENGINEERING,2024,canary.alert@example.com,2003-03-01,"New Delhi, Delhi",General
+12345,Invalid Short ID,COMPUTER SCIENCE & ENGINEERING,2024,invalid.id@example.com,2003-04-10,"Patiala, Punjab",General
+240318492031,Rohan Verma,COMPUTER SCIENCE & ENGINEERING,2024,rohan.v2@example.com,2002-11-09,"Panchkula, Haryana",General
+240318492032,Priya Nair,CIVIL ENGINEERING,2024,priya.nair@example.com,2002-06-20,"Chandigarh, Punjab",General
+

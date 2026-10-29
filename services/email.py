@@ -21,13 +21,16 @@ from sqlalchemy.orm import Session
 from models.models import EmailLog, VerificationToken, Student, Batch, Institute
 from security.hash_chain import log_event
 
+from dotenv import load_dotenv
+load_dotenv()
+
 # ── Env configuration ───────────────────────────────────────
 SMTP_HOST = os.environ.get("SMTP_HOST", "").strip()
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
 SMTP_USER = os.environ.get("SMTP_USER", "").strip()
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "").strip()
 MAIL_FROM = os.environ.get("MAIL_FROM", SMTP_USER or "verification@sih26263.edu").strip()
-MAIL_FROM_NAME = os.environ.get("MAIL_FROM_NAME", "Student Data Platform Verification").strip()
+MAIL_FROM_NAME = os.environ.get("MAIL_FROM_NAME", "Vishwas • Student Verification Platform").strip()
 
 # HTTPS API Key alternative (Resend or Brevo)
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "").strip()
@@ -53,6 +56,16 @@ def mask_email(email: str) -> str:
 def hash_token(raw_token: str) -> str:
     """Return SHA-256 hash of raw token."""
     return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+
+def derive_otp_from_token(raw_token: str) -> str:
+    """
+    Derives a deterministic 6-digit numeric OTP from the raw single-use token.
+    This allows zero DB schema alterations while providing true 1:1 binding between the token and the OTP.
+    """
+    digest = hashlib.sha256(f"otp:{raw_token}".encode("utf-8")).hexdigest()
+    # Take first 8 chars as hex integer modulo 900000 + 100000 -> 6 digits (100000 - 999999)
+    num = int(digest[:8], 16)
+    return str((num % 900000) + 100000)
 
 def check_email_provider_status() -> dict:
     """Check connectivity to configured email service without revealing secrets."""
@@ -189,6 +202,9 @@ def send_verification_email(db: Session, student: Student, raw_token: str, batch
     apaar_masked = f"********{student.apaar_id[-4:]}" if len(student.apaar_id) >= 4 else student.apaar_id
     inst_name = batch.institute.name if batch.institute else "Your Institution"
 
+    # Derive single-use 6-digit confirmation OTP
+    otp_code = derive_otp_from_token(raw_token)
+
     confirm_url = f"{APP_BASE_URL}/verify/{raw_token}?action=confirm"
     correct_url = f"{APP_BASE_URL}/verify/{raw_token}?action=correct"
 
@@ -196,7 +212,8 @@ def send_verification_email(db: Session, student: Student, raw_token: str, batch
         subject = f"[Test] Please confirm your details - {student.name} - {inst_name}"
         test_banner = f"""
         <div style="background:#fef3c7;border:1px solid #f59e0b;padding:12px;border-radius:6px;margin-bottom:20px;font-size:12px;color:#92400e;">
-          <strong>Test Mode:</strong> This verification message was redirected to the project owner. Intended recipient: <strong>{student.name} ({student.email or 'No email on file'})</strong>.
+          <strong>Test Mode:</strong> This verification message was redirected to the project owner. Intended recipient: <strong>{student.name} ({student.email or 'No email on file'})</strong>.<br>
+          <strong>Verification OTP:</strong> <span style="font-family:monospace;font-size:15px;letter-spacing:2px;font-weight:bold;color:#b45309;">{otp_code}</span>
         </div>
         """
     else:
@@ -211,7 +228,7 @@ def send_verification_email(db: Session, student: Student, raw_token: str, batch
       <div style="max-width:580px;margin:auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:32px;box-shadow:0 4px 6px -1px rgba(0,0,0,0.05);">
         {test_banner}
         <div style="border-bottom:2px solid #1b756b;padding-bottom:12px;margin-bottom:24px;">
-          <h2 style="color:#1b756b;margin:0;font-size:20px;">Student Record Verification</h2>
+          <h2 style="color:#1b756b;margin:0;font-size:20px;">Vishwas • Student Record Verification</h2>
           <span style="font-size:12px;color:#64748b;">Academic Record Confirmation</span>
         </div>
 
@@ -228,14 +245,21 @@ def send_verification_email(db: Session, student: Student, raw_token: str, batch
           <tr><td style="padding:10px 14px;color:#64748b;">Masked APAAR ID:</td><td style="padding:10px 14px;font-family:monospace;font-weight:bold;color:#1b756b;">{apaar_masked}</td></tr>
         </table>
 
-        <div style="margin:30px 0;text-align:center;">
-          <a href="{confirm_url}" style="display:inline-block;background:#1b756b;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:bold;font-size:14px;margin-right:12px;">Yes, my details are correct</a>
-          <a href="{correct_url}" style="display:inline-block;background:#ffffff;color:#475569;border:1px solid #cbd5e1;text-decoration:none;padding:12px 20px;border-radius:6px;font-weight:600;font-size:14px;">No, I need to correct something</a>
+        <!-- Single-Use 6-Digit OTP Box -->
+        <div style="background:#f0fdf4;border:1.5px dashed #1b756b;border-radius:10px;padding:16px;text-align:center;margin:24px 0;">
+          <span style="display:block;font-size:12px;font-weight:600;color:#1b756b;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Your One-Time Verification Passcode (OTP)</span>
+          <span style="display:block;font-size:28px;font-weight:800;font-family:monospace;letter-spacing:6px;color:#145952;">{otp_code}</span>
+          <span style="display:block;font-size:11px;color:#64748b;margin-top:4px;">Enter this 6-digit passcode on the verification page to complete confirmation.</span>
+        </div>
+
+        <div style="margin:26px 0;text-align:center;">
+          <a href="{confirm_url}" style="display:inline-block;background:#1b756b;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:bold;font-size:14px;margin-right:12px;">Proceed to Confirm Details</a>
+          <a href="{correct_url}" style="display:inline-block;background:#ffffff;color:#475569;border:1px solid #cbd5e1;text-decoration:none;padding:12px 20px;border-radius:6px;font-weight:600;font-size:14px;">Request Correction</a>
         </div>
 
         <p style="font-size:12px;color:#64748b;line-height:1.5;">
-          • This verification link is strictly single-use and valid for {TOKEN_EXPIRY_DAYS} days.<br>
-          • You will never be asked for your password or OTP.
+          • This verification link and OTP are strictly single-use and valid for {TOKEN_EXPIRY_DAYS} days.<br>
+          • Single-use security token binding: Do not share this OTP or link.
         </p>
 
         <div style="border-top:1px solid #f1f5f9;margin-top:28px;padding-top:16px;font-size:11px;color:#94a3b8;text-align:center;">
@@ -324,7 +348,10 @@ def send_completion_email(db: Session, student: Student, batch: Batch) -> dict:
     <head><meta charset="utf-8"></head>
     <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,sans-serif;color:#272727;background:#f8fafc;padding:24px;margin:0;">
       <div style="max-width:580px;margin:auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:32px;">
-        <h2 style="color:#1b756b;margin-top:0;">Academic Record Approval Complete</h2>
+        <div style="border-bottom:2px solid #1b756b;padding-bottom:12px;margin-bottom:20px;">
+          <h2 style="color:#1b756b;margin:0;font-size:20px;">Vishwas • Academic Record Approval Complete</h2>
+          <span style="font-size:12px;color:#64748b;">Regulatory Approval Notice</span>
+        </div>
         <p>Dear <strong>{student.name}</strong>,</p>
         <p>Your academic record submitted by <strong>{inst_name}</strong> under batch <em>{batch.name}</em> has been approved by the regulatory authority.</p>
         <p>Your record is now anchored to the tamper-evident audit ledger.</p>

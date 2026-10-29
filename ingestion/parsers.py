@@ -44,6 +44,8 @@ STUDENT_HEADER_MAP = {
     "status": ["status", "enrollment_status", "student_status"],
     "dob": ["dob", "date_of_birth", "birth_date", "birthdate"],
     "address": ["address", "residential_address", "addr", "permanent_address"],
+    "email": ["email", "student_email", "email_id", "mail"],
+    "nri_status": ["nri_status", "nri", "category"],
 }
 
 def _normalize_headers(columns: list[str], header_map: dict[str, list[str]]) -> dict[str, str]:
@@ -261,6 +263,8 @@ def ingest_students(file_bytes: bytes, filename: str, db: Session, default_insti
         year_raw = str(row.get("enrollment_year", "")).strip() if pd.notna(row.get("enrollment_year")) else ""
         dob = str(row.get("dob", "")).strip() if pd.notna(row.get("dob")) else None
         address = str(row.get("address", "")).strip() if pd.notna(row.get("address")) else None
+        email = str(row.get("email", "")).strip().lower() if pd.notna(row.get("email")) else None
+        nri_status = str(row.get("nri_status", "")).strip() if pd.notna(row.get("nri_status")) else None
         status = str(row.get("status", "Active")).strip() if pd.notna(row.get("status")) else "Active"
 
         # Resolve institute_id
@@ -302,6 +306,8 @@ def ingest_students(file_bytes: bytes, filename: str, db: Session, default_insti
             student.program = prog
             student.enrollment_year = year
             student.status = status
+            if email: student.email = email
+            if nri_status: student.nri_status = nri_status
             if dob: student.dob = dob
             if address: student.address = address
         else:
@@ -313,7 +319,9 @@ def ingest_students(file_bytes: bytes, filename: str, db: Session, default_insti
                 enrollment_year=year,
                 status=status,
                 dob=dob,
-                address=address
+                address=address,
+                email=email,
+                nri_status=nri_status
             )
             db.add(student)
 

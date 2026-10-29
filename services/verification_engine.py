@@ -53,7 +53,7 @@ def run_single_student_checks(student: Student, batch: Batch, db: Session) -> tu
 
     # 2. Honeytoken Scan
     honey_hit = check_honeytoken(student.apaar_id, db=db, actor="verification_run")
-    if honey_hit["triggered"]:
+    if honey_hit.get("is_honeytoken", honey_hit.get("triggered", False)):
         checks["honeytoken_scan"] = {"status": "fail", "reason": "CRITICAL: Reserved canary honeytoken ID detected", "evidence": honey_hit}
         is_blocked = True
     else:
@@ -181,11 +181,21 @@ def check_closures(program_name: str, institute_code: str) -> dict:
 async def execute_batch_verification_run(batch_id: int, db: Session):
     """
     Generator yielding live Server-Sent Events (SSE) representing real verification execution.
+    Always starts a fresh run — cleans up any stale incomplete runs first.
     """
     batch = db.query(Batch).filter(Batch.id == batch_id).first()
     if not batch:
         yield f"data: {json.dumps({'error': 'Batch not found'})}\n\n"
         return
+
+    # Clean up any stale/crashed runs so we always get fresh results
+    stale_runs = db.query(VerificationRun).filter(
+        VerificationRun.batch_id == batch_id,
+        VerificationRun.status == "running"
+    ).all()
+    for sr in stale_runs:
+        db.delete(sr)
+    db.commit()
 
     # Update batch status to under_review
     batch.status = "under_review"
@@ -241,6 +251,7 @@ async def execute_batch_verification_run(batch_id: int, db: Session):
             audit_hash=audit_hash
         )
         db.add(res_record)
+        db.flush()  # Flush so res_record.id is generated immediately
         student_results.append(res_record)
 
         # Stream student row completion
@@ -248,6 +259,7 @@ async def execute_batch_verification_run(batch_id: int, db: Session):
             "event": "student_checked",
             "index": idx + 1,
             "total_students": len(students),
+            "result_id": res_record.id,
             "student_id": std.id,
             "student_name": std.name,
             "apaar_id": f"********{std.apaar_id[-4:]}" if len(std.apaar_id) >= 4 else std.apaar_id,
@@ -255,6 +267,8 @@ async def execute_batch_verification_run(batch_id: int, db: Session):
             "verdict": verdict,
             "checks": checks,
             "audit_hash": audit_hash,
+            "reviewer_decision": None,
+            "reviewer_note": None,
             "counts": {
                 "cleared": cleared_count,
                 "needs_review": needs_review_count,

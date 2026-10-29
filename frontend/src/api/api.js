@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_URL || 'https://sihps1-llq1.onrender.com';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
 export function getAuthToken() {
   return localStorage.getItem('token');
@@ -38,6 +38,39 @@ export function getCurrentUser() {
     email: localStorage.getItem('email') || '',
     full_name: localStorage.getItem('full_name') || '',
   };
+}
+
+// Public request — never sends Authorization header (used for student-facing verify endpoints)
+export async function publicApiRequest(endpoint, options = {}) {
+  const headers = { ...options.headers };
+
+  let body = options.body;
+  if (body && !(body instanceof FormData) && typeof body === 'object') {
+    headers['Content-Type'] = 'application/json';
+    body = JSON.stringify(body);
+  }
+
+  const url = `${API_BASE}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+
+  try {
+    const response = await fetch(url, { ...options, headers, body });
+
+    const contentType = response.headers.get('content-type') || '';
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      const errorMsg = data.detail || data.message || `Request failed with status ${response.status}`;
+      const error = new Error(typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg));
+      error.status = response.status;
+      error.data = data;
+      throw error;
+    }
+
+    return data;
+  } catch (err) {
+    console.error(`Public API Error on [${options.method || 'GET'}] ${endpoint}:`, err);
+    throw err;
+  }
 }
 
 export async function apiRequest(endpoint, options = {}) {
@@ -151,10 +184,12 @@ export const aicteApi = {
 };
 
 export const publicApi = {
-  getVerificationPayload: (token) => apiRequest(`/verify/token/${token}`),
-  confirmVerification: (token) => apiRequest(`/verify/token/${token}/confirm`, { method: 'POST' }),
-  submitCorrection: (token, corrections) => apiRequest(`/verify/token/${token}/correct`, { method: 'POST', body: { corrections } }),
-  getPublicKey: () => apiRequest('/verify/public-key'),
-  verifyDocument: (document, signature) => apiRequest('/verify/document', { method: 'POST', body: { document, signature } }),
-  getDocumentByApaar: (apaarId) => apiRequest(`/verify/document/${apaarId}`),
+  // These three MUST NOT send any auth header — token-only public endpoints
+  getVerificationPayload: (token) => publicApiRequest(`/verify/token/${token}`),
+  confirmVerification: (token, otp = '') => publicApiRequest(`/verify/token/${token}/confirm`, { method: 'POST', body: { otp } }),
+  submitCorrection: (token, corrections, otp = '') => publicApiRequest(`/verify/token/${token}/correct`, { method: 'POST', body: { corrections, otp } }),
+  // Document verifier is public too
+  getPublicKey: () => publicApiRequest('/verify/public-key'),
+  verifyDocument: (document, signature) => publicApiRequest('/verify/document', { method: 'POST', body: { document, signature } }),
+  getDocumentByApaar: (apaarId) => publicApiRequest(`/verify/document/${apaarId}`),
 };

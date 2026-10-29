@@ -23,7 +23,7 @@ export function Header() {
       {/* Slim Teal Utility Bar */}
       <div className="bg-[#1b756b] text-white text-xs px-4 py-1.5 flex justify-between items-center max-w-7xl mx-auto">
         <div className="flex items-center space-x-3">
-          <span className="font-medium tracking-wide">National Student Data Verification Platform</span>
+          <span className="font-medium tracking-wide">Vishwas • National Student Data Verification Platform</span>
           <span className="hidden sm:inline text-teal-200">|</span>
           <span className="hidden sm:inline text-[11px] text-teal-100">Helpline: support@sih26263.edu</span>
         </div>
@@ -63,12 +63,12 @@ export function Header() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         <div className="flex items-center space-x-3">
           {/* Neutral modern placeholder brandmark */}
-          <div className="h-10 w-10 rounded-lg bg-[#1b756b] flex items-center justify-center text-white font-bold text-lg shadow-sm">
-            SDV
+          <div className="h-10 px-3 rounded-lg bg-[#1b756b] flex items-center justify-center text-white font-bold text-base shadow-sm tracking-wide">
+            VISHWAS
           </div>
           <div>
             <Link to="/" className="font-bold text-lg text-[#272727] tracking-tight hover:text-[#1b756b] transition">
-              Student Data Verification Platform
+              Vishwas • Student Data Verification Platform
             </Link>
             <span className="block text-[11px] text-[#1b756b] font-medium tracking-wide">
               APAAR ID Integration for Technical Institutions
@@ -122,7 +122,7 @@ export function Footer() {
           Prototype built for SIH26263. Not an official Government of India service.
         </div>
         <div className="text-slate-400 text-[11px]">
-          APAAR ID-Based Student Data Verification Platform
+          Vishwas • APAAR ID-Based Student Data Verification Platform
         </div>
       </div>
     </footer>
