@@ -1,62 +1,203 @@
-const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
+﻿const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
 // Demo mode: when token is 'demo-preview-token', skip all API calls
 export function isDemoMode() {
   return localStorage.getItem('token') === 'demo-preview-token';
 }
 
+// ─── DEMO STATE ENGINE ────────────────────────────────────────────────────────
+// All demo data lives in localStorage under 'vishwas_demo_state'.
+// Both portals share this state — institute pushes, AICTE sees it.
+
+const DEMO_KEY = 'vishwas_demo_state';
+
+function demoGetState() {
+  try {
+    const raw = localStorage.getItem(DEMO_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (_) {}
+  return { batches: [], pendingStudents: [] };
+}
+
+function demoSaveState(state) {
+  localStorage.setItem(DEMO_KEY, JSON.stringify(state));
+}
+
+// Parse CSV text → array of student row objects
+function parseCsvStudents(csvText) {
+  const lines = csvText.trim().split(/\r?\n/);
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/"/g, ''));
+  return lines.slice(1).map((line, i) => {
+    const vals = line.split(',').map(v => v.trim().replace(/"/g, ''));
+    const row = {};
+    headers.forEach((h, idx) => { row[h] = vals[idx] || ''; });
+    // normalise common column aliases
+    const apaar = row['apaar_id'] || row['apaarid'] || row['apaar'] || '';
+    const name  = row['name'] || row['full_name'] || row['student_name'] || `Student ${i + 1}`;
+    const prog  = row['program'] || row['programme'] || row['course'] || 'B.Tech';
+    const yr    = row['enrollment_year'] || row['year'] || '2022';
+    const email = row['email'] || row['email_id'] || '';
+    return {
+      student_id: Date.now() + i,
+      apaar_id_masked: apaar ? `****${apaar.slice(-4)}` : '****DEMO',
+      name: name,
+      program: prog,
+      enrollment_year: yr,
+      email: email,
+      verification_status: 'pending',
+      verification_status_label: 'Pending',
+      email_status: 'skipped',
+      email_status_label: 'Skipped (Demo)',
+      corrections: null,
+    };
+  }).filter(s => s.name);
+}
+
+// Upload students → store in pending pool
+export function demoUploadStudents(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target.result;
+      const students = parseCsvStudents(text);
+      if (students.length === 0) {
+        reject(new Error('No valid rows found in CSV. Check your columns: apaar_id, name, program, enrollment_year, email'));
+        return;
+      }
+      const state = demoGetState();
+      state.pendingStudents = students;
+      demoSaveState(state);
+      resolve({ inserted: students.length, rejected: 0 });
+    };
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsText(file);
+  });
+}
+
 // Mock data returned in demo mode so dashboards render without a backend
-function getDemoData(endpoint, method) {
-  if (method !== 'GET') {
-    return Promise.resolve({ success: true, message: 'Demo mode — action simulated' });
-  }
-  if (endpoint.includes('/batches') && !endpoint.match(/\/batches\/\d/)) {
-    return Promise.resolve([
-      {
-        id: 1,
-        name: 'Batch 2024-A (Demo)',
-        status: 'approved',
-        student_count: 142,
+function getDemoData(endpoint, method, body) {
+  const state = demoGetState();
+
+  // ── POST / mutating actions ──────────────────────────────────────────────
+  if (method === 'POST') {
+    // Create batch
+    if (endpoint === '/batches') {
+      const batchName = (body && body.name) ? body.name : `Demo Batch ${state.batches.length + 1}`;
+      const students = (state.pendingStudents || []).slice(); // take uploaded students
+      const newBatch = {
+        batch_id: Date.now(),
+        name: batchName,
+        status: 'draft',
+        status_label: 'Draft',
+        student_count: students.length,
         institute_id: 1,
-        institute_name: 'L M Thapar School Of Management',
-        created_at: '2024-11-01T10:00:00',
-        pushed_at: '2024-11-03T10:00:00',
-      },
-      {
-        id: 2,
-        name: 'Batch 2024-B (Demo)',
-        status: 'under_review',
-        student_count: 98,
-        institute_id: 1,
-        institute_name: 'L M Thapar School Of Management',
-        created_at: '2024-11-10T10:00:00',
-        pushed_at: '2024-11-12T10:00:00',
-      },
-    ]);
+        institute_name: localStorage.getItem('institute_name') || 'Demo Institute',
+        created_at: new Date().toISOString(),
+        pushed_at: null,
+        students: students,
+        verification_result: null,
+        reject_reason: null,
+      };
+      state.batches.push(newBatch);
+      state.pendingStudents = [];
+      demoSaveState(state);
+      return Promise.resolve({ batch_id: newBatch.batch_id, name: newBatch.name, student_count: newBatch.student_count });
+    }
+
+    // Push batch to AICTE
+    const pushMatch = endpoint.match(/\/batches\/(\d+)\/push/);
+    if (pushMatch) {
+      const bId = Number(pushMatch[1]);
+      const batch = state.batches.find(b => b.batch_id === bId);
+      if (batch) {
+        batch.status = 'under_review';
+        batch.status_label = 'Under Review';
+        batch.pushed_at = new Date().toISOString();
+        // Auto-generate a verification result for AICTE to see
+        batch.verification_result = {
+          id: Date.now(),
+          status: 'completed',
+          pass_count: Math.max(1, batch.student_count - 2),
+          fail_count: 1,
+          mismatch_count: 1,
+          run_at: new Date().toISOString(),
+          reviewer_decision: null,
+          reviewer_note: null,
+        };
+        // Mark some students verified for display
+        batch.students = batch.students.map((s, i) => ({
+          ...s,
+          verification_status: i < batch.students.length - 1 ? 'verified' : 'mismatch',
+          verification_status_label: i < batch.students.length - 1 ? 'Verified' : 'Mismatch',
+        }));
+        demoSaveState(state);
+      }
+      return Promise.resolve({ success: true });
+    }
+
+    // AICTE approve batch
+    const approveMatch = endpoint.match(/\/aicte\/batches\/(\d+)\/approve/);
+    if (approveMatch) {
+      const bId = Number(approveMatch[1]);
+      const batch = state.batches.find(b => b.batch_id === bId);
+      if (batch) {
+        batch.status = 'approved';
+        batch.status_label = 'Approved';
+        if (batch.verification_result) {
+          batch.verification_result.reviewer_decision = 'approved';
+          batch.verification_result.reviewer_note = 'Approved via demo review.';
+        }
+        demoSaveState(state);
+      }
+      return Promise.resolve({ success: true });
+    }
+
+    // AICTE reject batch
+    const rejectMatch = endpoint.match(/\/aicte\/batches\/(\d+)\/reject/);
+    if (rejectMatch) {
+      const bId = Number(rejectMatch[1]);
+      const batch = state.batches.find(b => b.batch_id === bId);
+      if (batch) {
+        batch.status = 'returned';
+        batch.status_label = 'Returned';
+        batch.reject_reason = (body && body.reason) ? body.reason : 'Returned for revision.';
+        demoSaveState(state);
+      }
+      return Promise.resolve({ success: true });
+    }
+
+    // Verifications / other POST → simulate silently
+    return Promise.resolve({ success: true, sent_count: 0, message: 'Demo mode — email skipped (would send in live system)' });
   }
-  if (endpoint.match(/\/batches\/\d+$/) || endpoint.match(/\/batches\/\d+\/last-run/)) {
-    return Promise.resolve({
-      id: 1,
-      name: 'Batch 2024-A (Demo)',
-      status: 'approved',
-      student_count: 142,
-      students: [
-        { id: 1, apaar_id: '123456789012', full_name: 'Aarav Mehta', status: 'verified', correction_status: null },
-        { id: 2, apaar_id: '234567890123', full_name: 'Priya Sharma', status: 'verified', correction_status: null },
-        { id: 3, apaar_id: '345678901234', full_name: 'Rahul Verma', status: 'mismatch', correction_status: 'pending' },
-      ],
-      verification_result: {
-        id: 1,
-        status: 'completed',
-        pass_count: 130,
-        fail_count: 8,
-        mismatch_count: 4,
-        run_at: '2024-11-03T11:00:00',
-        reviewer_decision: 'approved',
-        reviewer_note: 'All records verified. Minor mismatches resolved.',
-      },
-    });
+
+  // ── GET requests ─────────────────────────────────────────────────────────
+  // List batches (institute sees draft+; AICTE sees under_review+)
+  if (endpoint === '/batches') {
+    const role = localStorage.getItem('role') || '';
+    const aicteStatuses = ['under_review', 'approved', 'returned', 'pushed'];
+    const filtered = role === 'aicte_admin'
+      ? state.batches.filter(b => aicteStatuses.includes(b.status))
+      : state.batches;
+    return Promise.resolve({ batches: filtered });
   }
+
+  // Single batch details
+  const batchDetailMatch = endpoint.match(/\/batches\/(\d+)$/);
+  if (batchDetailMatch) {
+    const bId = Number(batchDetailMatch[1]);
+    const batch = state.batches.find(b => b.batch_id === bId);
+    return Promise.resolve(batch || {});
+  }
+
+  // Last run (AICTE verification run panel)
+  const lastRunMatch = endpoint.match(/\/aicte\/batches\/(\d+)\/last-run/);
+  if (lastRunMatch) {
+    const bId = Number(lastRunMatch[1]);
+    const batch = state.batches.find(b => b.batch_id === bId);
+    return Promise.resolve(batch?.verification_result || null);
+  }
+
   if (endpoint.includes('/institutes/list')) {
     return Promise.resolve([
       { id: 1, name: 'L M Thapar School Of Management', code: 'LMTSM', status: 'active' },
@@ -64,12 +205,12 @@ function getDemoData(endpoint, method) {
     ]);
   }
   if (endpoint.includes('/email/status')) {
-    return Promise.resolve({ configured: true, provider: 'Demo SMTP', from: 'vishwas@demo.in' });
+    return Promise.resolve({ configured: false, can_send: false, provider: 'Demo — email skipped', from: '' });
   }
   if (endpoint.includes('/audit/verify-chain')) {
-    return Promise.resolve({ valid: true, blocks: 3, message: 'Audit chain intact (Demo)' });
+    return Promise.resolve({ valid: true, blocks: state.batches.length + 1, message: 'Audit chain intact (Demo)' });
   }
-  // Default empty response
+
   return Promise.resolve({});
 }
 
@@ -149,7 +290,7 @@ export async function publicApiRequest(endpoint, options = {}) {
 export async function apiRequest(endpoint, options = {}) {
   // --- DEMO MODE: skip backend, return mock data ---
   if (isDemoMode()) {
-    return getDemoData(endpoint, options.method || 'GET');
+    return getDemoData(endpoint, options.method || 'GET', options.body || null);
   }
   // --- END DEMO MODE ---
 
@@ -225,7 +366,10 @@ export const authApi = {
 };
 
 export const instituteApi = {
-  uploadStudents: (formData) => apiRequest('/student/upload', { method: 'POST', body: formData }),
+  uploadStudents: (formData) => {
+    if (isDemoMode()) { const file = formData.get('file'); return demoUploadStudents(file); }
+    return apiRequest('/student/upload', { method: 'POST', body: formData });
+  },
   createBatch: (name) => apiRequest('/batches', { method: 'POST', body: { name } }),
   getBatches: () => apiRequest('/batches'),
   getBatchDetails: (batchId) => apiRequest(`/batches/${batchId}`),
@@ -274,3 +418,4 @@ export const publicApi = {
   verifyDocument: (document, signature) => publicApiRequest('/verify/document', { method: 'POST', body: { document, signature } }),
   getDocumentByApaar: (apaarId) => publicApiRequest(`/verify/document/${apaarId}`),
 };
+
